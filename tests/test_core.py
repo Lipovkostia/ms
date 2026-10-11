@@ -3,7 +3,7 @@ import unittest
 from datetime import date
 from pathlib import Path
 import pandas as pd
-from sales_center.data import demo_data
+from fixtures import demo_data
 from sales_center.analytics import metrics, orders, client_summary, companions, period
 from sales_center.recommendations import generate
 from sales_center.storage import Store

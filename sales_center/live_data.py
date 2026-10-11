@@ -14,7 +14,25 @@ def local_id(value):
         raise MoySkladError('В данных отсутствует обязательный идентификатор.')
     return int(hashlib.sha256(value.encode()).hexdigest()[:15],16)
 
+def number(obj,key,optional=False):
+    value=obj.get(key)
+    if value is None and optional: return 0.0
+    try:
+        value=float(value)
+        if not math.isfinite(value): raise ValueError()
+        return value
+    except (TypeError,ValueError,OverflowError):
+        raise MoySkladError(f'В документе поле «{key}» отсутствует или не является конечным числом. Проверьте документ в Моём Складе.') from None
+
 def normalize(counterparties,assortment,documents,currencies,positions):
+    try:
+        return _normalize(counterparties,assortment,documents,currencies,positions)
+    except KeyError as exc:
+        raise MoySkladError(f'В ответе API отсутствует обязательное поле: {exc.args[0]}. Обновите загрузку; документ нужно проверить в Моём Складе.') from None
+    except (TypeError,ValueError,OverflowError) as exc:
+        raise MoySkladError(f'Не удалось преобразовать дату или число в данных отгрузки ({type(exc).__name__}). Проверьте формат документов.') from None
+
+def _normalize(counterparties,assortment,documents,currencies,positions):
     cp = {external_id(c): c for c in counterparties}
     prods = {external_id(p): p for p in assortment}
     currency = {external_id(c): c for c in currencies}
@@ -33,30 +51,32 @@ def normalize(counterparties,assortment,documents,currencies,positions):
         cur = currency.get(external_id(doc.get('rate',{}).get('currency',{})),{})
         if str(cur.get('isoCode')).upper() not in {'643', 'RUB'}:
             raise MoySkladError('MVP поддерживает только отгрузки в RUB. Обнаружена другая или неизвестная валюта.')
+        moment=pd.Timestamp(doc.get('moment'))
+        if pd.isna(moment): raise MoySkladError('В отгрузке отсутствует корректная дата moment.')
         doc_rows = []
         gross_total = 0.0
         for p in positions[doc['id']]:
-            product = p.get('assortment',{})
+            product = p.get('assortment') or {}
             pid = external_id(product)
             if not product.get('name'):
                 product = prods.get(pid,{})
-            qty = float(p['quantity'])
+            qty = number(p,'quantity')
             if qty < 0:
                 raise MoySkladError('Отрицательное количество в отгрузке не поддерживается.')
-            price = float(p['price'])/100
-            base = price*qty*(1-float(p.get('discount',0))/100)
-            vat = float(p.get('vat',0))/100 if doc.get('vatEnabled') else 0
+            price = number(p,'price')/100
+            base = price*qty*(1-number(p,'discount',optional=True)/100)
+            vat = number(p,'vat',optional=True)/100 if doc.get('vatEnabled') else 0
             net = base/(1+vat) if doc.get('vatIncluded') and vat else base
             gross = net*(1+vat)
             gross_total += gross
             # API fields=stock supplies historical unit cost in minor RUB units.
-            raw_cost = p.get('stock',{}).get('cost')
-            cost = float(raw_cost)/100*qty if raw_cost is not None else float('nan')
-            doc_rows.append(dict(order_id=doc['id'],client_id=local_id(cid),date=pd.Timestamp(doc['moment']).normalize(),
+            raw_cost = (p.get('stock') or {}).get('cost')
+            cost = number({'cost':raw_cost},'cost')/100*qty if raw_cost is not None else float('nan')
+            doc_rows.append(dict(order_id=doc['id'],client_id=local_id(cid),date=moment.normalize(),
                 product_id=local_id(pid),product=product.get('name','Товар без названия'),
                 category=product.get('pathName') or 'Без категории',quantity=qty,
                 revenue=round(net,2),cost=round(cost,2),profit=round(net-cost,2)))
-        if not math.isclose(gross_total,float(doc['sum'])/100,abs_tol=max(.02,len(doc_rows)*.01)):
+        if not math.isclose(gross_total,number(doc,'sum')/100,abs_tol=max(.02,len(doc_rows)*.01)):
             raise MoySkladError('Сумма позиций не совпадает с суммой отгрузки. Требуется проверка скидок и НДС; данные не загружены.')
         if not doc_rows:
             excluded_empty += 1
@@ -69,6 +89,9 @@ def normalize(counterparties,assortment,documents,currencies,positions):
                             columns=['product_id','product','category','price','unit_cost'])
     lines = pd.DataFrame(rows,columns=['order_id','client_id','date','product_id','product','category','quantity','revenue','cost','profit'])
     lines['date'] = pd.to_datetime(lines['date'])
+    clients.attrs['account_id'] = next((c.get('accountId') for c in counterparties if c.get('accountId')),None)
+    clients['phone'] = [c.get('phone') or '' for c in cp.values()]
+    clients['email'] = [c.get('email') or '' for c in cp.values()]
     lines.attrs['excluded_internal_shipments'] = excluded_internal
     lines.attrs['excluded_empty_shipments'] = excluded_empty
     if clients.client_id.duplicated().any() or products.product_id.duplicated().any():
@@ -82,7 +105,10 @@ def load_live(today, token=None, progress=None):
             progress(stage, count, total)
     def collect(entity, label, params=None):
         report(label)
-        return api.list_entities(entity,params,progress=lambda count,total: report(label,count,total))
+        result=api.list_entities(entity,params,progress=lambda count,total: report(label,count,total))
+        if any(not isinstance(row,dict) for row in result):
+            raise MoySkladError(f'{label}: API вернул строку неизвестного формата.')
+        return result
     try:
         # Verify credentials before starting an expensive shipment read.
         currencies = collect('currency','Проверка подключения и валют')
@@ -112,5 +138,8 @@ def load_live(today, token=None, progress=None):
         products = collect('assortment','Загрузка товаров')
         report('Проверка и обработка данных')
         return normalize(cp,products,docs,currencies,positions)
+    except (KeyError,TypeError,ValueError,OverflowError) as exc:
+        field=f' Поле: {exc.args[0]}.' if isinstance(exc,KeyError) else ''
+        raise MoySkladError(f'Неверный формат коллекции API ({type(exc).__name__}).{field} Частичная загрузка отменена; прежние данные сохранены.') from None
     finally:
         api.session.close()
