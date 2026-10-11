@@ -10,19 +10,23 @@ from sales_center.moysklad import MoySkladError
 from sales_center.sync import refresh, due
 from sales_center.identity import identity
 from sales_center.theme import CSS
+from sales_center.presentation import safe, pill, stat, client_row, purchase_chart, category_chart
 from sales_center.settings import connections, model_picker
 
 st.set_page_config(page_title='AI Sales Center', page_icon='📈', layout='wide')
 st.markdown(CSS,unsafe_allow_html=True)
 TODAY=pd.Timestamp.now(tz='Europe/Moscow').date()
 user_id,user_name=identity()
+if 'page' not in st.session_state: st.session_state.page='Клиенты'
 PAGES=['Главная','Клиенты','Карточка клиента','Возврат клиентов','Товарная аналитика','AI-рекомендации','Задачи','Эффективность','Сообщения','Настройки']
 with st.sidebar:
-    st.markdown('<div class="brand">◈ AI-Помощник</div><div class="brand-sub">для оптовых продаж</div>',unsafe_allow_html=True)
-    page=st.radio('Раздел',PAGES,key='page')
+    st.markdown('<div class="brand"><div class="brand-mark"></div><div><div class="brand-title">AI-Помощник</div><div class="brand-sub">для оптовых продаж</div></div></div>',unsafe_allow_html=True)
+    nav_icons=['⌂','♧','▣','↻','▥','✦','☑','↗','▤','⚙']
+    page=st.radio('Раздел',PAGES,key='page',format_func=lambda name:nav_icons[PAGES.index(name)]+'  '+name)
     st.divider()
+    st.markdown('<div class="nav-foot"><b>✦ Аналитика продаж</b><br>История покупок помогает выбрать следующий контакт.</div>',unsafe_allow_html=True)
     st.caption(user_name)
-    if user_id=='personal': st.warning('Персональный режим. Для сотрудников настройте вход в Настройках.')
+    if user_id=='personal': st.caption('Персональный режим · вход сотрудников настраивается в Настройках.')
     else:
         if st.button('Выйти'): st.logout()
 
@@ -30,15 +34,16 @@ with st.sidebar:
 def sync_panel():
     interval=st.session_state.get('sync_interval',0)
     auto=due(st.session_state,interval)
-    with st.expander('Мой Склад · подключение и обновление',expanded='live_data' not in st.session_state):
+    with st.popover('↻ Синхронизировать с Мой Склад' if 'live_data' in st.session_state else '↻ Подключить Мой Склад',width='stretch'):
         with st.form('moysklad_connect',clear_on_submit=True):
             token=st.text_input('API-токен Моего Склада',type='password')
             retain=st.checkbox('Держать токен в памяти этой сессии для обновления')
             requested=st.form_submit_button('Загрузить / обновить данные')
+        quick=st.button('Обновить сейчас',type='primary',disabled=not st.session_state.get('sync_token'))
         interval=st.selectbox('Период обновления (минут)',[0,15,30,60],format_func=lambda n:'Только вручную' if n==0 else f'Каждые {n} минут',key='sync_interval')
         st.caption('Полная загрузка 12 месяцев может занять несколько минут. Автообновление работает только при открытой вкладке и токене в памяти; проверка таймера раз в минуту. Это снимок данных, а не поток в реальном времени.')
         if interval and not st.session_state.get('sync_token') and not (requested and retain): st.info('Для автообновления загрузите данные с флажком хранения токена в сессии.')
-        if requested or auto:
+        if requested or quick or auto:
             try:
                 with st.status('Подключение…',expanded=True) as status:
                     def report(stage,count,total): status.update(label=f'{stage}: {count:,} / {total:,}' if total else stage)
@@ -56,13 +61,28 @@ def sync_panel():
             for key in list(st.session_state):
                 if key.startswith(('live_','sync_','provider_','client_draft_','draft_')): del st.session_state[key]
             st.rerun()
-sync_panel()
-st.title(page)
+with st.container(key='topbar'):
+    search_col,sync_col,status_col,user_col=st.columns([2.8,2,1.8,1.3],gap='small',vertical_alignment='center')
+    with search_col:
+        global_search=st.text_input('Поиск по клиентам, товарам, контактам',placeholder='⌕  Поиск по клиентам, товарам, контактам…',key='global_search')
+    with sync_col: sync_panel()
+    with status_col:
+        if st.session_state.get('sync_success_at'):
+            updated=pd.Timestamp(st.session_state.sync_success_at,unit='s',tz='UTC').tz_convert('Europe/Moscow')
+            st.markdown(f'<div class="top-status"><span class="status-dot"></span>Данные обновлены {updated:%d.%m.%Y %H:%M}<br>Мой Склад · МСК</div>',unsafe_allow_html=True)
+        else: st.markdown('<div class="top-status"><span class="status-dot off"></span>Источник не подключён</div>',unsafe_allow_html=True)
+    with user_col:
+        display_name=user_name if user_id!='personal' else 'Мой кабинет'
+        initial=display_name[:1].upper()
+        st.markdown(f'<div class="user-profile"><div class="avatar">{safe(initial)}</div><div>{safe(display_name)}<span>Менеджер продаж</span></div></div>',unsafe_allow_html=True)
+with st.container(key='workspace-title' if page in ['Клиенты','Карточка клиента'] else 'page-title'):
+    st.title(page)
 source='Мой Склад'
 if page=='Настройки':
     connections()
     st.stop()
 if 'live_data' not in st.session_state:
+    st.markdown('<div class="empty-hero"><span class="pill">Ваш центр управления продажами</span><h2>Клиенты, аналитика и следующий шаг —<br>в одном рабочем пространстве</h2><p>Подключите Мой Склад, чтобы увидеть свою клиентскую базу, историю покупок и возможности для следующего контакта.</p><p>Нажмите «Подключить Мой Склад» в верхней панели и вставьте токен. Первичная загрузка годовой истории может занять несколько минут.</p></div>',unsafe_allow_html=True)
     st.info('Подключите Мой Склад в панели выше. Здесь отображаются только реальные данные вашего аккаунта. Настройки мессенджеров и AI доступны до загрузки.')
     st.stop()
 clients,products,lines=st.session_state.live_data
@@ -86,13 +106,17 @@ except (OSError,ValueError):
 if 'live_analytics' not in st.session_state:
     st.session_state.live_analytics=(client_summary(clients,lines,TODAY),generate(client_summary(clients,lines,TODAY),lines,products,TODAY))
 summary,recommendations=st.session_state.live_analytics
-st.caption('Реальные проведённые отгрузки за 12 месяцев · RUB · оборот без НДС и без вычета возвратов. Данные обновляются только после успешной синхронизации.')
-if not store.persistent: st.caption('Записи: локальная SQLite. Streamlit Cloud может удалить их при перезапуске; для постоянного хранения настройте PostgreSQL.')
-st.caption(f'Исключено внутренних отгрузок: {lines.attrs.get("excluded_internal_shipments",0)} · пустых документов: {lines.attrs.get("excluded_empty_shipments",0)}')
-if lines.cost.isna().any(): st.warning('API не вернул себестоимость части позиций. Валовая прибыль соответствующих периодов недоступна.')
-with st.expander('Период аналитики'):
-    start=st.date_input('Начало периода',TODAY-timedelta(days=90),key='period_start')
-    end=st.date_input('Конец периода',TODAY,key='period_end')
+with st.sidebar:
+    with st.expander('Источник и хранение'):
+        st.caption('Реальные проведённые отгрузки за 12 месяцев · RUB. Оборот без НДС и без вычета возвратов.')
+        st.caption(f'Исключено внутренних отгрузок: {lines.attrs.get("excluded_internal_shipments",0)} · пустых документов: {lines.attrs.get("excluded_empty_shipments",0)}')
+        if not store.persistent: st.caption('SQLite: облако может удалить записи при перезапуске. Для постоянного хранения настройте PostgreSQL.')
+        if lines.cost.isna().any(): st.caption('Себестоимость части позиций недоступна: прибыль таких периодов не рассчитывается.')
+with st.sidebar:
+    with st.expander('Период аналитики'):
+        start=st.date_input('Начало периода',TODAY-timedelta(days=90),key='period_start')
+        end=st.date_input('Конец периода',TODAY,key='period_end')
+        st.caption('Период влияет на суммы и графики. Циклы рассчитаны по 12 месяцам.')
 if start>end: st.error('Начало периода не может быть позже конца.'); st.stop()
 selected=period(lines,start,end)
 
@@ -193,78 +217,141 @@ if page == 'Главная':
     st.caption('Рекомендации учитывают всю доступную историю, независимо от выбранного периода графиков.')
     recommendation_cards(recommendations.sort_values('effect',ascending=False),5)
 elif page in ['Клиенты','Карточка клиента']:
-    top=st.columns(4)
-    top[0].metric('Всего клиентов',len(clients))
-    top[1].metric('С покупками за 12 месяцев',int((summary.order_count>0).sum()))
-    top[2].metric('Заказ задерживается',int((summary.cycle_ratio>1.5).sum()))
-    top[3].metric('Возможности для контакта',len(recommendations))
-    left,center,right=st.columns([1.05,1.65,1.3],gap='medium')
-    with left:
-        st.subheader('Приоритетные клиенты')
-        search=st.text_input('Поиск по названию компании или городу')
-        priorities=st.multiselect('Приоритет',['Высокий','Средний','Низкий'])
-        view=summary[summary.company.str.contains(search,case=False,regex=False)|summary.city.str.contains(search,case=False,regex=False)]
-        if priorities: view=view[view.priority.isin(priorities)]
-        view=view.assign(rank=view.priority.map({'Высокий':0,'Средний':1,'Низкий':2})).sort_values(['rank','revenue'],ascending=[True,False])
-        st.caption(f'Найдено: {len(view)} · оборот за 12 месяцев')
-        if view.empty: st.info('Клиенты не найдены.'); st.stop()
-        ids=view.client_id.tolist()
-        if st.session_state.get('workspace_client') not in ids: st.session_state.workspace_client=ids[0]
-        cid=st.selectbox('Выберите клиента',ids,format_func=lambda x:clients.set_index('client_id').loc[x,'company'],key='workspace_client')
-        if st.session_state.get('client_list_page',1)>max(1,(len(view)+5)//6): st.session_state.client_list_page=1
-        offset=st.number_input('Страница клиентов',min_value=1,max_value=max(1,(len(view)+5)//6),value=1,key='client_list_page')
-        for item in view.iloc[(offset-1)*6:offset*6].itertuples():
-            with st.container(border=True):
-                st.button(item.company,key=f'pick_{item.client_id}',on_click=lambda value: st.session_state.update(workspace_client=value),args=(item.client_id,),width='stretch')
-                st.caption(item.priority+' · '+item.city)
-                st.write(rub(item.revenue))
-                st.caption('Последний заказ: '+(item.last_order.strftime('%d.%m.%Y') if pd.notna(item.last_order) else 'нет покупок'))
-        with st.expander('Таблица клиентов'):
-            st.dataframe(view[['company','city','revenue','last_order','priority']].rename(columns={'company':'Клиент','city':'Город','revenue':'Оборот, ₽','last_order':'Последняя покупка','priority':'Приоритет'}),hide_index=True)
-    c=summary.set_index('client_id').loc[cid]
-    own=period(lines[lines.client_id==cid],start,end)
-    with center:
-        st.subheader(c.company)
-        st.caption(c.city+' · '+c.priority+' приоритет')
-        tabs=st.tabs(['Обзор','История','Товары','Заметки','Контакты'])
-        with tabs[0]:
-            m=metrics(own)
-            a,b=st.columns(2)
-            a.metric('Оборот за период',rub(m['revenue']))
-            b.metric('Средний чек',rub(m['average']))
-            st.write(f'Частота: {c.frequency:.1f} заказа за 30 дней')
-            st.write('Обычный цикл (медиана): '+(f'{c.cycle:.0f} дней' if pd.notna(c.cycle) else 'недостаточно истории'))
-            st.caption('Цикл определяется при ≥3 заказах; частота = количество заказов × 30 / дней с первого заказа до сегодня.')
-            graph(own)
-            if not own.empty:
-                cat=own.groupby('category',as_index=False).revenue.sum()
-                st.plotly_chart(px.pie(cat,names='category',values='revenue',hole=.65,color_discrete_sequence=['#10b981','#60a5fa','#fbbf24','#a78bfa']),width='stretch')
-        with tabs[1]: st.dataframe(orders(own).sort_values('date',ascending=False).drop(columns='client_id').rename(columns={'order_id':'Отгрузка','date':'Дата','revenue':'Оборот, ₽','cost':'Себестоимость, ₽','profit':'Валовая прибыль, ₽'}),hide_index=True)
-        with tabs[2]: st.dataframe(own.groupby('product',as_index=False).agg(quantity=('quantity','sum'),revenue=('revenue','sum'),orders=('order_id','nunique')).rename(columns={'product':'Товар','quantity':'Количество','revenue':'Оборот, ₽','orders':'Заказов'}),hide_index=True)
-        with tabs[3]:
-            note=st.text_area('Заметка о клиенте',store.get('note',cid,''),key=f'client_note_{cid}')
-            if st.button('Сохранить заметку'): save_record('note',cid,note)
-        with tabs[4]:
-            contact=clients.set_index('client_id').loc[cid]
-            st.write('Телефон: '+str(contact.get('phone') or 'не указан'))
-            st.write('Email: '+str(contact.get('email') or 'не указан'))
-    with right:
-        st.subheader('✦ AI-рекомендации')
-        own_recs=recommendations[recommendations.client_id==cid]
-        for r in own_recs.head(3).itertuples():
-            with st.container(border=True):
-                st.markdown('**'+r.title+'**')
-                st.write(r.reason)
-                st.caption(r.priority+' · потенциальный оборот '+rub(r.effect)+' (оценка)')
-                st.write(r.action)
-        if own_recs.empty: st.info('Сигналов по истории покупок пока нет.')
-        action=own_recs.iloc[0].action if len(own_recs) else 'Хочу уточнить ваши потребности и обсудить следующий заказ.'
-        model_picker(store,cid,c,own_recs)
-        draft=st.text_area('Черновик сообщения',store.get('draft',cid,message(c.company,action)),key=f'client_draft_{cid}',height=220)
-        if st.button('Сохранить черновик'): save_record('draft',cid,draft)
-        st.code(draft,language=None)
-        st.caption('Кнопка копирования — справа в блоке. Отправка только вручную; автоматической рассылки нет.')
-        task_form(cid,f'card_{cid}',action)
+    active_count=int((summary.order_count>0).sum())
+    delayed_count=int((summary.cycle_ratio>1.5).sum())
+    potential=recommendations.groupby('client_id').effect.max().sum() if len(recommendations) else 0
+    tasks=store.tasks()
+    planned=int((~tasks.status.isin(['Выполнена','Отменена'])).sum())
+    cards=[('Всего клиентов',str(len(clients)),'Контрагенты Моего Склада','♧','blue'),
+           ('С покупками',str(active_count),'За последние 12 месяцев','♧','mint'),
+           ('Заказ задерживается',str(delayed_count),'По индивидуальному циклу','◷','orange'),
+           ('Потенциал продаж',rub(potential),'Оценка по рекомендациям','↗','mint'),
+           ('Контакты в плане',str(planned),'Ваши открытые задачи','☑','purple')]
+    with st.container(key='kpi-rack'):
+        for col,card in zip(st.columns(5,gap='small'),cards):
+            with col: st.markdown(stat(*card),unsafe_allow_html=True)
+    with st.container(key='workspace'):
+        left,center,right=st.columns([1.02,1.65,1.35],gap='medium')
+        with left,st.container(border=True,key='client-list'):
+            st.subheader('Приоритетные клиенты')
+            search=st.text_input('Поиск по названию компании или городу',placeholder='Название компании или город',label_visibility='collapsed')
+            priorities=st.multiselect('Приоритет',['Высокий','Средний','Низкий'],placeholder='Все приоритеты',label_visibility='collapsed')
+            view=summary[summary.company.str.contains(search,case=False,regex=False)|summary.city.str.contains(search,case=False,regex=False)]
+            if global_search:
+                matching=clients.company.str.contains(global_search,case=False,regex=False)|clients.city.str.contains(global_search,case=False,regex=False)
+                for field in ['phone','email']:
+                    if field in clients: matching=matching|clients[field].fillna('').str.contains(global_search,case=False,regex=False)
+                matching_ids=set(clients.loc[matching,'client_id'])
+                matching_ids.update(lines.loc[lines['product'].str.contains(global_search,case=False,regex=False),'client_id'])
+                view=view[view.client_id.isin(matching_ids)]
+            if priorities: view=view[view.priority.isin(priorities)]
+            view=view.assign(rank=view.priority.map({'Высокий':0,'Средний':1,'Низкий':2})).sort_values(['rank','revenue'],ascending=[True,False])
+            if view.empty: st.info('Клиенты не найдены. Измените поиск или фильтры.'); st.stop()
+            ids=view.client_id.tolist()
+            if st.session_state.get('workspace_client') not in ids: st.session_state.workspace_client=ids[0]
+            cid=st.session_state.workspace_client
+            st.caption(f'Найдено {len(view):,} · Оборот за 12 месяцев')
+            if st.session_state.get('client_list_page',1)>max(1,(len(view)+5)//6): st.session_state.client_list_page=1
+            offset=st.session_state.get('client_list_page',1)
+            for item in view.iloc[(offset-1)*6:offset*6].itertuples():
+                with st.container(key=f'client-item-{item.client_id}'):
+                    st.markdown(client_row(item,item.client_id==cid),unsafe_allow_html=True)
+                    st.button('Открыть карточку — '+item.company,key=f'pick_{item.client_id}',on_click=lambda value: st.session_state.update(workspace_client=value),args=(item.client_id,),width='stretch')
+            st.number_input('Страница клиентов',min_value=1,max_value=max(1,(len(view)+5)//6),value=1,key='client_list_page')
+            with st.expander('Все клиенты · таблица'):
+                st.selectbox('Выберите клиента',ids,format_func=lambda x:clients.set_index('client_id').loc[x,'company'],key='workspace_client')
+                st.dataframe(view[['company','city','revenue','last_order','priority']].rename(columns={'company':'Клиент','city':'Город','revenue':'Оборот, ₽','last_order':'Последняя покупка','priority':'Приоритет'}),hide_index=True,width='stretch')
+        c=summary.set_index('client_id').loc[cid]
+        contact=clients.set_index('client_id').loc[cid]
+        own=period(lines[lines.client_id==cid],start,end)
+        with center,st.container(border=True,key='client-detail'):
+            st.caption('ОБЗОР КЛИЕНТА')
+            st.markdown(f'<div class="workspace-heading"><h2>{safe(c.company)}</h2>{pill(c.priority+" приоритет","mint" if c.priority=="Высокий" else "blue")}</div>',unsafe_allow_html=True)
+            badges=pill('Повторные покупки' if c.order_count>1 else 'Одна покупка' if c.order_count==1 else 'Пока без покупок')
+            if c.segment!='Не указан': badges+=' '+pill(c.segment,'purple')
+            st.markdown(badges,unsafe_allow_html=True)
+            phone=contact.get('phone') or 'Телефон не указан'
+            email=contact.get('email') or 'Email не указан'
+            st.markdown(f'<div class="contact-line">♧ &nbsp;{safe(phone)} &nbsp; · &nbsp; ✉ {safe(email)}<br>⌖ &nbsp;{safe(c.city)}</div>',unsafe_allow_html=True)
+            tabs=st.tabs(['Обзор','История заказов','Товары','Заметки','Контакты'])
+            with tabs[0]:
+                m=metrics(own)
+                a,b,d=st.columns(3,gap='small')
+                a.metric('Оборот за период',rub(m['revenue']))
+                b.metric('Средний чек',rub(m['average']))
+                d.metric('Частота заказов',f'{c.frequency:.1f} / 30 дн.')
+                chart_left,chart_right=st.columns([1.15,1],gap='small')
+                with chart_left,st.container(border=True):
+                    st.markdown('**Динамика покупок**')
+                    if own.empty: st.info('Нет заказов за период.')
+                    else: st.plotly_chart(purchase_chart(own),width='stretch',config={'displayModeBar':False})
+                with chart_right,st.container(border=True):
+                    st.markdown('**Популярные категории**')
+                    if own.empty: st.caption('Нет покупок за период.')
+                    else: st.plotly_chart(category_chart(own),width='stretch',config={'displayModeBar':False})
+                st.markdown('**Последние заказы**')
+                history=orders(own).sort_values('date',ascending=False).head(5)
+                if history.empty: st.caption('За выбранный период отгрузок нет.')
+                else:
+                    names=own.groupby('order_id')['product'].agg(lambda values:', '.join(dict.fromkeys(values)))
+                    recent=history[['date','revenue']].copy()
+                    recent['products']=history.order_id.map(names)
+                    recent['status']='Проведена'
+                    recent['date']=recent.date.dt.strftime('%d.%m.%Y')
+                    st.dataframe(recent.rename(columns={'date':'Дата','revenue':'Сумма, ₽','products':'Товары','status':'Отгрузка'}),hide_index=True,width='stretch',height=225)
+                with st.expander('Цикл заказов и формулы'):
+                    st.write('Обычный цикл (медиана): '+(f'{c.cycle:.0f} дней' if pd.notna(c.cycle) else 'недостаточно истории'))
+                    st.caption('Цикл определяется при ≥3 заказах; частота = число заказов × 30 / дней с первого заказа до сегодня.')
+            with tabs[1]: st.dataframe(orders(own).sort_values('date',ascending=False).drop(columns='client_id').rename(columns={'order_id':'Отгрузка','date':'Дата','revenue':'Оборот, ₽','cost':'Себестоимость, ₽','profit':'Валовая прибыль, ₽'}),hide_index=True,width='stretch')
+            with tabs[2]: st.dataframe(own.groupby('product',as_index=False).agg(quantity=('quantity','sum'),revenue=('revenue','sum'),orders=('order_id','nunique')).rename(columns={'product':'Товар','quantity':'Количество','revenue':'Оборот, ₽','orders':'Заказов'}),hide_index=True,width='stretch')
+            with tabs[3]:
+                note=st.text_area('Заметка о клиенте',store.get('note',cid,''),key=f'client_note_{cid}')
+                if st.button('Сохранить заметку'): save_record('note',cid,note)
+            with tabs[4]:
+                st.write('Телефон: '+str(contact.get('phone') or 'не указан'))
+                st.write('Email: '+str(contact.get('email') or 'не указан'))
+                st.write('Адрес: '+c.city)
+        with right,st.container(border=True,key='draft-panel'):
+            st.subheader('✦ AI-рекомендации')
+            own_recs=recommendations[recommendations.client_id==cid]
+            if own_recs.empty:
+                st.markdown('<div class="ai-box"><b>Обсудите следующий заказ</b>В истории клиента пока нет достаточных сигналов для персональной рекомендации.</div>',unsafe_allow_html=True)
+            else:
+                reasons=''.join('<li>'+safe(r.reason)+'</li>' for r in own_recs.head(3).itertuples())
+                effect=own_recs.effect.max()
+                st.markdown(f'<div class="ai-box"><b>✦ Почему стоит связаться?</b><ul>{reasons}</ul><div class="estimate">Возможный дополнительный оборот: {safe(rub(effect))} · оценка, не гарантия</div></div>',unsafe_allow_html=True)
+                st.caption('Следующий шаг: '+own_recs.iloc[0].action)
+            action=own_recs.iloc[0].action if len(own_recs) else 'Хочу уточнить ваши потребности и обсудить следующий заказ.'
+            with st.expander('Модель AI и подготовка текста'):
+                model_picker(store,cid,c,own_recs)
+            st.markdown('**Готовое сообщение для клиента**')
+            draft=st.text_area('Черновик сообщения',store.get('draft',cid,message(c.company,action)),key=f'client_draft_{cid}',height=225,label_visibility='collapsed')
+            st.caption(f'{len(draft)} символов · черновик можно редактировать')
+            save_col,copy_col=st.columns([1,1],gap='small')
+            with save_col:
+                if st.button('Сохранить черновик',width='stretch',type='primary'): save_record('draft',cid,draft)
+            with copy_col: st.download_button('Скачать текст',draft,file_name='message.txt',width='stretch')
+            with st.expander('Скопировать сообщение'):
+                st.code(draft,language=None)
+                st.caption('Кнопка копирования — справа. Отправка выполняется менеджером вручную.')
+            wa,tg=st.columns(2,gap='small')
+            with wa,st.container(key='send-whatsapp'): st.link_button('WhatsApp ↗','https://web.whatsapp.com/',width='stretch')
+            with tg,st.container(key='send-telegram'): st.link_button('Telegram ↗','https://web.telegram.org/',width='stretch')
+            st.caption('Откроется мессенджер. Сначала скопируйте текст; сообщение автоматически не отправляется.')
+            with st.container(border=True,key='contact-task'):
+                st.markdown('**▢ Создать задачу**')
+                with st.form(f'task_card_{cid}'):
+                    date_col,add_col=st.columns([1.2,1],gap='small',vertical_alignment='bottom')
+                    with date_col: due_date=st.date_input('Следующий контакт',TODAY+timedelta(days=5),key=f'due_card_{cid}')
+                    with add_col: submitted=st.form_submit_button('Создать задачу',type='primary',width='stretch')
+                    with st.expander('Название и заметка'):
+                        title=st.text_input('Задача',action,key=f'title_card_{cid}')
+                        note=st.text_area('Заметка',key=f'note_card_{cid}',height=68)
+                    if submitted:
+                        try:
+                            store.add(cid,title,due_date,note)
+                            st.success('Задача сохранена в вашем плане контактов.')
+                        except (ValueError,StoreError): st.error('Не удалось сохранить задачу. Проверьте название и доступность базы.')
 elif page == 'Возврат клиентов':
     st.write('Клиенты с задержкой более 1,5 индивидуального цикла. Фиксированный порог дней не применяется.')
     late = summary[summary.cycle_ratio > 1.5].sort_values('cycle_ratio',ascending=False)

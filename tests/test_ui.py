@@ -30,7 +30,7 @@ class InterfaceTests(unittest.TestCase):
         for page in at.radio[0].options:
             at.radio[0].set_value(page).run()
             self.assertFalse(at.exception,page)
-            self.assertIn(page,[t.value for t in at.title])
+            self.assertIn(at.session_state['page'],[t.value for t in at.title])
     def test_empty_source_no_demo_fallback(self):
         at=self.app(False)
         self.assertEqual(len(at.metric),0)
@@ -71,6 +71,6 @@ class InterfaceTests(unittest.TestCase):
         self.assertFalse(at.exception)
     def test_invalid_dates(self):
         at=self.app()
-        at.date_input[0].set_value(date(2030,1,1)).run()
+        next(d for d in at.date_input if d.label=='Начало периода').set_value(date(2030,1,1)).run()
         self.assertTrue(at.error)
         self.assertFalse(at.exception)
