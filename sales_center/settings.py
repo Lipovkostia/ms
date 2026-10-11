@@ -1,6 +1,6 @@
 """Connection checks never persist credentials; saved preferences contain model IDs only."""
 import streamlit as st
-from sqlalchemy.exc import SQLAlchemyError
+from .storage import StoreError
 from .providers import GreenAPI,Telegram,MAX,OpenRouter,ProviderError
 
 
@@ -52,7 +52,7 @@ def model_picker(store,cid,client,recs):
         try:
             store.put('preference','model',model)
             st.success('Модель сохранена для вашего аккаунта.')
-        except SQLAlchemyError: st.error('Не удалось сохранить выбор модели.')
+        except StoreError: st.error('Не удалось сохранить выбор модели.')
     consent=st.checkbox('Разрешаю передать имя клиента и агрегаты в выбранную модель',key=f'consent_{cid}')
     st.caption('Запрос может тарифицироваться OpenRouter. Телефон, email и полная история заказов не передаются.')
     if st.button('Подготовить AI-черновик',disabled=not consent):

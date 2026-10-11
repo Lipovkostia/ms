@@ -3,10 +3,9 @@ from pathlib import Path
 import pandas as pd
 import plotly.express as px
 import streamlit as st
-from sqlalchemy.exc import SQLAlchemyError
 from sales_center.analytics import metrics, orders, client_summary, period, monthly, companions
 from sales_center.recommendations import generate, message
-from sales_center.storage import Store
+from sales_center.storage import Store, StoreError
 from sales_center.moysklad import MoySkladError
 from sales_center.sync import refresh, due
 from sales_center.identity import identity
@@ -78,7 +77,10 @@ try:
     try: database_url=st.secrets.get('DATABASE_URL')
     except (FileNotFoundError,st.errors.StreamlitSecretNotFoundError): database_url=None
     store=Store(Path(__file__).parent/'.runtime'/'moysklad.db',scope=f'{account}:{user_id}',database_url=database_url)
-except (SQLAlchemyError,OSError,ValueError):
+except StoreError as exc:
+    st.error(str(exc))
+    st.stop()
+except (OSError,ValueError):
     st.error('База записей недоступна. Проверьте DATABASE_URL или права записи в .runtime. Секрет подключения не выводится.')
     st.stop()
 if 'live_analytics' not in st.session_state:
@@ -98,7 +100,7 @@ def save_record(kind,key,value):
     try:
         store.put(kind,key,value)
         st.success('Запись сохранена.')
-    except SQLAlchemyError:
+    except StoreError:
         st.error('Не удалось сохранить запись. Проверьте доступность базы и повторите попытку.')
 
 def rub(value):
@@ -141,7 +143,7 @@ def task_form(cid, key, action='Связаться с клиентом', rec_id=
             try:
                 store.add(cid,title,due,note,rec_id)
                 st.success('Задача сохранена. Она доступна в разделе «Задачи».')
-            except (ValueError,SQLAlchemyError) as exc:
+            except (ValueError,StoreError) as exc:
                 st.error(str(exc) if isinstance(exc,ValueError) else 'Не удалось сохранить задачу.')
 
 def recommendation_cards(frame, limit=15):
@@ -169,7 +171,7 @@ def recommendation_cards(frame, limit=15):
                 try:
                     store.process(r.id)
                     st.rerun()
-                except SQLAlchemyError: st.error('Не удалось сохранить обработку рекомендации.')
+                except StoreError: st.error('Не удалось сохранить обработку рекомендации.')
 
 
 if page == 'Главная':
@@ -313,7 +315,7 @@ elif page == 'Задачи':
                     try:
                         store.update(task.id,status,note)
                         st.rerun()
-                    except SQLAlchemyError: st.error('Не удалось сохранить результат задачи.')
+                    except StoreError: st.error('Не удалось сохранить результат задачи.')
 elif page == 'Эффективность':
     st.subheader('Продажи за выбранный период · ' + source)
     kpis(selected)
