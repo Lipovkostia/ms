@@ -1,5 +1,6 @@
 from datetime import timedelta
 from pathlib import Path
+import inspect
 import pandas as pd
 import plotly.express as px
 import streamlit as st
@@ -67,6 +68,10 @@ if config.automatic and not st.session_state.get('sync_disconnected'):
             except MoySkladError as exc: st.session_state.live_error=str(exc)
             except (KeyError,TypeError,ValueError): st.session_state.live_error='Не удалось обработать данные. Повторите обновление; сохранённый токен вводить заново не нужно.'
 
+def navigate(page_name):
+    st.session_state.page=page_name
+    if 'moysklad_panel' in st.session_state: st.session_state.moysklad_panel=False
+
 if 'page' not in st.session_state: st.session_state.page='Клиенты'
 PAGES=['Главная','Клиенты','Карточка клиента','Возврат клиентов','Товарная аналитика','AI-рекомендации','Задачи','Эффективность','Сообщения','Настройки']
 with st.sidebar:
@@ -84,10 +89,12 @@ with st.sidebar:
 def sync_panel():
     interval=st.session_state.get('sync_interval',0)
     auto=due(st.session_state,interval)
-    with st.popover('↻ Синхронизировать с Мой Склад' if 'live_data' in st.session_state else '↻ Подключить Мой Склад',width='stretch'):
+    panel_label='↻ Подключение и обновление' if page=='Настройки' else '↻ Синхронизировать с Мой Склад' if 'live_data' in st.session_state else '↻ Подключить Мой Склад'
+    popover_options={'key':'moysklad_panel','on_change':'rerun'} if 'on_change' in inspect.signature(st.popover).parameters else {}
+    with st.popover(panel_label,width='stretch',**popover_options):
         if config.token:
             if config.authorized:
-                st.success('Постоянный токен настроен. После обновления сайта он берётся из Streamlit Secrets.')
+                st.success('Постоянный токен настроен. После обновления сайта он берётся из защищённых настроек хостинга.')
                 if st.session_state.get('sync_disconnected') and st.button('Восстановить постоянное подключение'):
                     st.session_state.pop('sync_disconnected',None)
                     st.session_state.pop('sync_bootstrap_done',None)
@@ -95,12 +102,12 @@ def sync_panel():
             else:
                 st.warning('Токен сохранён, но автоматический доступ закрыт. Настройте вход сотрудников либо закрытый доступ Streamlit Cloud и MOYSKLAD_PRIVATE_DEPLOYMENT=true.')
         else:
-            st.caption('Чтобы не вводить ключ после обновления, один раз добавьте MOYSKLAD_TOKEN в Manage app → Settings → Secrets. Инструкция — в Настройках.')
+            st.caption('Чтобы не вводить ключ после обновления, один раз добавьте MOYSKLAD_TOKEN в защищённые настройки хостинга. Нажмите «Настроить постоянное подключение» ниже.')
         with st.form('moysklad_connect',clear_on_submit=True):
             token=st.text_input('API-токен Моего Склада',type='password',help='При постоянном подключении оставьте поле пустым. Новый ввод временно переключает источник этой сессии.')
             retain=st.checkbox('Держать введённый токен в памяти этой сессии для обновления',value=True)
             requested=st.form_submit_button('Загрузить / обновить данные')
-        quick=st.button('Обновить сейчас',type='primary',disabled=not st.session_state.get('sync_token'))
+        quick=st.button('Обновить сейчас',type='primary',disabled=not st.session_state.get('sync_token'),help='Для обновления сначала загрузите данные с сохранением токена в сессии или настройте постоянное подключение')
         interval=st.selectbox('Период обновления (минут)',[0,15,30,60],format_func=lambda n:'Только вручную' if n==0 else f'Каждые {n} минут',key='sync_interval')
         st.caption('При открытии сначала восстанавливается сохранённый снимок. Обновление из Моего Склада работает при открытой вкладке; таймер проверяется раз в минуту. Первичная загрузка при отсутствии снимка может занять несколько минут. Это не поток в реальном времени.')
         if interval and not st.session_state.get('sync_token') and not (requested and retain): st.info('Для автообновления загрузите данные с флажком хранения токена в сессии.')
@@ -134,6 +141,9 @@ def sync_panel():
         if st.session_state.get('sync_success_at'):
             stamp=pd.Timestamp(st.session_state.sync_success_at,unit='s',tz='UTC').tz_convert('Europe/Moscow')
             st.caption(f'Успешное обновление: {stamp:%d.%m.%Y %H:%M} МСК')
+        if page!='Настройки':
+            if st.button('Настроить постоянное подключение',key='sync_settings',on_click=navigate,args=('Настройки',),width='stretch'):
+                st.rerun()
         if st.button('Отключить источник в этой сессии'):
             for key in list(st.session_state):
                 if key.startswith(('live_','sync_','provider_','client_draft_','draft_')): del st.session_state[key]
@@ -150,9 +160,8 @@ with st.container(key='topbar'):
             st.markdown(f'<div class="top-status"><span class="status-dot"></span>Данные обновлены {updated:%d.%m.%Y %H:%M}<br>{'Сохранённый снимок' if st.session_state.get('sync_restored') else 'Мой Склад'} · МСК</div>',unsafe_allow_html=True)
         else: st.markdown('<div class="top-status"><span class="status-dot off"></span>Источник не подключён</div>',unsafe_allow_html=True)
     with user_col:
-        display_name=user_name if user_id!='personal' else 'Мой кабинет'
-        initial=display_name[:1].upper()
-        st.markdown(f'<div class="user-profile"><div class="avatar">{safe(initial)}</div><div>{safe(display_name)}<span>Менеджер продаж</span></div></div>',unsafe_allow_html=True)
+        st.button('Настройки и подключения',key='open_settings',on_click=navigate,args=('Настройки',),width='stretch',help='Открыть настройки токена, мессенджеров и хранения данных')
+        st.caption(user_name if user_id!='personal' else 'Личный кабинет')
 with st.container(key='workspace-title' if page in ['Клиенты','Карточка клиента'] else 'page-title'):
     st.title(page)
 source='Мой Склад'
@@ -333,7 +342,7 @@ elif page in ['Клиенты','Карточка клиента']:
             for item in view.iloc[(offset-1)*6:offset*6].itertuples():
                 with st.container(key=f'client-item-{item.client_id}'):
                     st.markdown(client_row(item,item.client_id==cid),unsafe_allow_html=True)
-                    st.button('Открыть карточку — '+item.company,key=f'pick_{item.client_id}',on_click=lambda value: st.session_state.update(workspace_client=value),args=(item.client_id,),width='stretch')
+                    st.button('Открыть '+item.company+' →',key=f'pick_{item.client_id}',on_click=lambda value: st.session_state.update(workspace_client=value),args=(item.client_id,),width='stretch')
             st.number_input('Страница клиентов',min_value=1,max_value=max(1,(len(view)+5)//6),value=1,key='client_list_page')
             with st.expander('Все клиенты · таблица'):
                 st.selectbox('Выберите клиента',ids,format_func=lambda x:clients.set_index('client_id').loc[x,'company'],key='workspace_client')

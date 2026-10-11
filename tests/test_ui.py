@@ -121,3 +121,14 @@ class InterfaceTests(unittest.TestCase):
         self.assertFalse(at.exception)
         self.assertNotIn('live_data',at.session_state)
         self.assertNotIn('sync_token',at.session_state)
+
+    def test_settings_buttons_open_working_settings_without_connection(self):
+        at=self.app(False)
+        next(b for b in at.button if b.key=='open_settings').click().run()
+        self.assertFalse(at.exception)
+        self.assertEqual(at.session_state['page'],'Настройки')
+        self.assertIn('Настройки',[title.value for title in at.title])
+        at=self.app(False)
+        next(b for b in at.button if b.key=='sync_settings').click().run()
+        self.assertFalse(at.exception)
+        self.assertEqual(at.session_state['page'],'Настройки')

@@ -1,8 +1,8 @@
 CSS = '''<style>
 :root{--navy:#142336;--mint:#00b68a;--line:#e4eaf5;--text:#14223f;--muted:#7281a3}
 .stApp{background:linear-gradient(115deg,#f7faff 0%,#fff 70%);color:var(--text)}
-header[data-testid="stHeader"]{background:transparent!important;height:2.4rem}
-.block-container{padding:1rem 1.3rem 2rem;max-width:1920px}
+header[data-testid="stHeader"]{background:transparent!important;height:3rem}
+.block-container{padding:4rem 1.3rem 2rem;max-width:1920px}
 [data-testid="stMainBlockContainer"]>div>[data-testid="stVerticalBlock"]{gap:.8rem}
 [data-testid="stSidebar"]{background:linear-gradient(155deg,#182b40,#101d2b);min-width:190px;max-width:215px;border-right:1px solid #25384d}
 [data-testid="stSidebar"] [data-testid="stSidebarContent"]{padding-top:.75rem}
@@ -51,9 +51,8 @@ h1{font-size:25px!important;letter-spacing:-.025em}h2{font-size:20px!important}h
 .empty-hero{padding:36px;border:1px solid var(--line);border-radius:16px;background:linear-gradient(115deg,#fff,#f1fcf8);margin-top:18px;max-width:1000px}.empty-hero h2{font-size:28px!important;color:#162d4a}.empty-hero p{font-size:14px;color:#63758f;max-width:620px;line-height:1.8}
 @media(min-width:1100px){.st-key-workspace [data-testid="stHorizontalBlock"]{align-items:stretch}.st-key-client-list,.st-key-client-detail,.st-key-draft-panel{min-height:760px}}
 @media(max-width:1099px){.st-key-workspace>[data-testid="stHorizontalBlock"]{flex-wrap:wrap}.st-key-workspace>[data-testid="stHorizontalBlock"]>[data-testid="stColumn"]{flex:1 1 100%!important;min-width:100%!important}.stat-value{font-size:19px}.stat-card{padding:11px;gap:8px}}
-@media(max-width:640px){.block-container{padding:1rem .75rem}.st-key-topbar [data-testid="stHorizontalBlock"]{flex-wrap:wrap}.st-key-topbar [data-testid="stColumn"]{min-width:100%!important;flex:1 1 100%!important}.user-profile{justify-content:flex-start}.stat-card{min-height:80px}.workspace-heading{flex-wrap:wrap}.empty-hero{padding:22px}.stat-value{font-size:20px}}
+@media(max-width:640px){.block-container{padding:4rem .75rem 1rem}.st-key-topbar [data-testid="stHorizontalBlock"]{flex-wrap:wrap}.st-key-topbar [data-testid="stColumn"]{min-width:100%!important;flex:1 1 100%!important}.user-profile{justify-content:flex-start}.stat-card{min-height:80px}.workspace-heading{flex-wrap:wrap}.empty-hero{padding:22px}.stat-value{font-size:20px}}
 
-[data-testid="stToolbar"]{display:none}
 [data-testid="stSidebarHeader"]{height:36px}
 [data-testid="stSidebarUserContent"]{padding:0 14px 20px}
 .brand{margin-top:-10px;gap:8px}.brand-title{font-size:16px}.brand-sub{font-size:9px}
@@ -61,12 +60,6 @@ h1{font-size:25px!important;letter-spacing:-.025em}h2{font-size:20px!important}h
 [data-testid="stTextInputRootElement"]{border:1px solid #dce4f2!important;border-radius:9px!important;background:white!important}
 [data-testid="stTextAreaRootElement"]{border:1px solid #dce4f2!important;border-radius:9px!important;background:white!important}
 .client-row{min-height:100px;padding:11px 12px}.client-row strong{font-size:12px}
-.st-key-client-list [class*="st-key-client-item-"]{position:relative;margin:0}
-.st-key-client-list [class*="st-key-client-item-"] [data-testid="stButton"]{position:absolute;inset:0;z-index:1}
-.st-key-client-list [class*="st-key-client-item-"] [data-testid="stButton"] button{height:100%;min-height:100px;margin:0;border-radius:0;background:transparent;color:transparent!important}
-.st-key-client-list [class*="st-key-client-item-"] [data-testid="stButton"] button p{color:transparent!important}
-.st-key-client-list [class*="st-key-client-item-"] [data-testid="stButton"] button:hover{background:#1ab88908}
-.st-key-client-list [class*="st-key-client-item-"] [data-testid="stButton"] button:focus-visible{outline:2px solid #16b887;outline-offset:-2px}
 .st-key-send-whatsapp a{background:#08b889!important;color:white!important;border:0!important}
 .st-key-send-telegram a{background:#3388f7!important;color:white!important;border:0!important}
 @media(max-width:1099px){.st-key-workspace>[data-testid="stLayoutWrapper"]>[data-testid="stHorizontalBlock"]{flex-wrap:wrap}.st-key-workspace>[data-testid="stLayoutWrapper"]>[data-testid="stHorizontalBlock"]>[data-testid="stColumn"]{flex:1 1 100%!important;min-width:100%!important}}
@@ -88,4 +81,12 @@ h1{font-size:25px!important;letter-spacing:-.025em}h2{font-size:20px!important}h
 .st-key-topbar [data-testid="stColumn"]{flex:1 1 100%!important;min-width:100%!important}
 .stat-value{font-size:21px}
 }
+
+/* Keep hit targets in normal document flow: no invisible overlay buttons. */
+.stButton>button,[data-testid="stFormSubmitButton"]>button,[data-testid="stPopover"]>button,[data-testid="stLinkButton"] a{min-height:44px;cursor:pointer}
+.st-key-client-list [data-testid="stButton"] button{min-height:44px;border:1px solid #dce7e2;border-radius:8px;color:#08765d;background:#f3fbf7;padding:8px 10px;font-size:12px;justify-content:center}
+.st-key-client-list [data-testid="stButton"] button:hover{background:#e3f7ed;border-color:#33bb91}
+.st-key-client-list [data-testid="stButton"] button:focus-visible{outline:2px solid #16b887;outline-offset:2px}
+.st-key-open_settings button{background:#eff8f5;color:#13755b;border:1px solid #cfe8df;width:100%}
+[data-testid="stButton"] button:disabled,[data-testid="stFormSubmitButton"] button:disabled{cursor:not-allowed}
 </style>'''
