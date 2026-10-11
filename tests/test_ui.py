@@ -15,10 +15,13 @@ class InterfaceTests(unittest.TestCase):
         self.store=Store(Path(self.temp.name)/'records.db')
         self.patch=patch('sales_center.storage.Store',return_value=self.store)
         self.patch.start()
+        self.cache_patch=patch('sales_center.snapshots.Store',return_value=self.store)
+        self.cache_patch.start()
     def tearDown(self):
-        self.patch.stop();self.temp.cleanup()
+        self.cache_patch.stop();self.patch.stop();self.temp.cleanup()
     def app(self,loaded=True):
         at=AppTest.from_file(str(ROOT/'app.py'),default_timeout=30)
+        at.secrets.clear()
         if loaded:
             c,p,l=demo_data(date.today());c.attrs['account_id']='test-account'
             at.session_state['live_data']=(c,p,l)
@@ -74,3 +77,47 @@ class InterfaceTests(unittest.TestCase):
         next(d for d in at.date_input if d.label=='Начало периода').set_value(date(2030,1,1)).run()
         self.assertTrue(at.error)
         self.assertFalse(at.exception)
+
+    def test_managed_secret_survives_new_session_with_cached_data(self):
+        fresh=demo_data(date.today());fresh[0].attrs['account_id']='test-account'
+        def managed_app():
+            at=AppTest.from_file(str(ROOT/'app.py'),default_timeout=30)
+            at.secrets.clear()
+            at.secrets['MOYSKLAD_TOKEN']='persistent-test-key'
+            at.secrets['MOYSKLAD_PRIVATE_DEPLOYMENT']=True
+            return at
+        first=managed_app()
+        with patch('sales_center.sync.load_live',return_value=fresh) as api:
+            first.run();self.assertFalse(first.exception)
+            self.assertEqual(api.call_count,1)
+        second=managed_app()
+        with patch('sales_center.sync.load_live') as api:
+            second.run();self.assertFalse(second.exception)
+            self.assertTrue(second.session_state['sync_restored'])
+            self.assertEqual(len(second.session_state['live_data'][0]),100)
+            second.radio[0].set_value('Главная').run()
+            api.assert_not_called()
+            self.assertFalse(second.exception)
+        self.assertEqual(second.session_state['sync_interval'],30)
+    def test_public_app_does_not_expose_server_token(self):
+        at=AppTest.from_file(str(ROOT/'app.py'),default_timeout=30)
+        at.secrets.clear()
+        at.secrets['MOYSKLAD_TOKEN']='persistent-test-key'
+        with patch('sales_center.sync.load_live') as api:
+            at.run();api.assert_not_called()
+        self.assertFalse(at.exception)
+        self.assertNotIn('live_data',at.session_state)
+    def test_revoking_managed_access_clears_existing_session(self):
+        fresh=demo_data(date.today());fresh[0].attrs['account_id']='test-account'
+        at=AppTest.from_file(str(ROOT/'app.py'),default_timeout=30)
+        at.secrets.clear()
+        at.secrets['MOYSKLAD_TOKEN']='persistent-test-key'
+        at.secrets['MOYSKLAD_PRIVATE_DEPLOYMENT']=True
+        with patch('sales_center.sync.load_live',return_value=fresh): at.run()
+        self.assertIn('live_data',at.session_state)
+        at.secrets['MOYSKLAD_PRIVATE_DEPLOYMENT']=False
+        with patch('sales_center.sync.load_live') as api:
+            at.run();api.assert_not_called()
+        self.assertFalse(at.exception)
+        self.assertNotIn('live_data',at.session_state)
+        self.assertNotIn('sync_token',at.session_state)

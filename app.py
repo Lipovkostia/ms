@@ -7,7 +7,9 @@ from sales_center.analytics import metrics, orders, client_summary, period, mont
 from sales_center.recommendations import generate, message
 from sales_center.storage import Store, StoreError
 from sales_center.moysklad import MoySkladError
-from sales_center.sync import refresh, due
+from sales_center.sync import refresh, due, restore
+from sales_center.connection_config import read_config
+from sales_center.snapshots import SnapshotCache, SnapshotError, source_id
 from sales_center.identity import identity
 from sales_center.theme import CSS
 from sales_center.presentation import safe, pill, stat, client_row, purchase_chart, category_chart
@@ -17,6 +19,54 @@ st.set_page_config(page_title='AI Sales Center', page_icon='📈', layout='wide'
 st.markdown(CSS,unsafe_allow_html=True)
 TODAY=pd.Timestamp.now(tz='Europe/Moscow').date()
 user_id,user_name=identity()
+if st.session_state.get('_active_user',user_id)!=user_id:
+    for key in list(st.session_state): del st.session_state[key]
+st.session_state['_active_user']=user_id
+try:
+    secret_settings={key:st.secrets.get(key) for key in ['MOYSKLAD_TOKEN','DATABASE_URL','MOYSKLAD_PRIVATE_DEPLOYMENT','MOYSKLAD_AUTO_CONNECT','MOYSKLAD_SYNC_MINUTES']}
+except (FileNotFoundError,st.errors.StreamlitSecretNotFoundError): secret_settings={}
+config=read_config(secret_settings,user_id)
+SNAPSHOT_PATH=Path(__file__).parent/'.runtime'/'moysklad.db'
+
+def cache_for(token):
+    try:
+        return SnapshotCache(SNAPSHOT_PATH,token,user_id,database_url=config.database_url)
+    except (StoreError,OSError,ValueError):
+        st.session_state.sync_cache_error='Хранилище снимков недоступно. Проверьте настройки базы. Ключ остаётся в защищённых настройках.'
+        return None
+
+# Removing access or a configured key must also clear a previously managed session.
+if st.session_state.get('sync_origin')=='managed' and not (config.token and config.authorized):
+    for key in list(st.session_state):
+        if key.startswith(('live_','sync_','client_','draft_','workspace_')): del st.session_state[key]
+
+# Managed credentials survive application deployment in Streamlit Secrets.
+if config.automatic and not st.session_state.get('sync_disconnected'):
+    managed=source_id(config.token)
+    previous=st.session_state.get('sync_managed_source')
+    if previous!=managed:
+        for key in ['live_data','live_analytics','sync_success_at','sync_attempt_at','sync_bootstrap_done']:
+            st.session_state.pop(key,None)
+        st.session_state.sync_managed_source=managed
+        st.session_state.sync_token=config.token
+        st.session_state.sync_origin='managed'
+    if 'sync_interval' not in st.session_state: st.session_state.sync_interval=config.interval
+    if not st.session_state.get('sync_bootstrap_done'):
+        st.session_state.sync_bootstrap_done=True
+        cache=cache_for(config.token)
+        restored=False
+        if cache is not None:
+            try: restored=restore(st.session_state,TODAY,cache)
+            except (StoreError,SnapshotError): st.session_state.sync_cache_error='Сохранённый снимок недоступен. Выполняется новая загрузка.'
+        if not restored and 'live_data' not in st.session_state:
+            try:
+                with st.status('Автоподключение к Моему Складу · сохранённый токен',expanded=True) as status:
+                    def bootstrap_report(stage,count,total): status.update(label=f'{stage}: {count:,} / {total:,}' if total else stage)
+                    refresh(st.session_state,TODAY,token=config.token,progress=bootstrap_report,retain=True,cache=cache)
+                    status.update(label='Подключение восстановлено',state='complete',expanded=False)
+            except MoySkladError as exc: st.session_state.live_error=str(exc)
+            except (KeyError,TypeError,ValueError): st.session_state.live_error='Не удалось обработать данные. Повторите обновление; сохранённый токен вводить заново не нужно.'
+
 if 'page' not in st.session_state: st.session_state.page='Клиенты'
 PAGES=['Главная','Клиенты','Карточка клиента','Возврат клиентов','Товарная аналитика','AI-рекомендации','Задачи','Эффективность','Сообщения','Настройки']
 with st.sidebar:
@@ -35,31 +85,59 @@ def sync_panel():
     interval=st.session_state.get('sync_interval',0)
     auto=due(st.session_state,interval)
     with st.popover('↻ Синхронизировать с Мой Склад' if 'live_data' in st.session_state else '↻ Подключить Мой Склад',width='stretch'):
+        if config.token:
+            if config.authorized:
+                st.success('Постоянный токен настроен. После обновления сайта он берётся из Streamlit Secrets.')
+                if st.session_state.get('sync_disconnected') and st.button('Восстановить постоянное подключение'):
+                    st.session_state.pop('sync_disconnected',None)
+                    st.session_state.pop('sync_bootstrap_done',None)
+                    st.rerun()
+            else:
+                st.warning('Токен сохранён, но автоматический доступ закрыт. Настройте вход сотрудников либо закрытый доступ Streamlit Cloud и MOYSKLAD_PRIVATE_DEPLOYMENT=true.')
+        else:
+            st.caption('Чтобы не вводить ключ после обновления, один раз добавьте MOYSKLAD_TOKEN в Manage app → Settings → Secrets. Инструкция — в Настройках.')
         with st.form('moysklad_connect',clear_on_submit=True):
-            token=st.text_input('API-токен Моего Склада',type='password')
-            retain=st.checkbox('Держать токен в памяти этой сессии для обновления')
+            token=st.text_input('API-токен Моего Склада',type='password',help='При постоянном подключении оставьте поле пустым. Новый ввод временно переключает источник этой сессии.')
+            retain=st.checkbox('Держать введённый токен в памяти этой сессии для обновления',value=True)
             requested=st.form_submit_button('Загрузить / обновить данные')
         quick=st.button('Обновить сейчас',type='primary',disabled=not st.session_state.get('sync_token'))
         interval=st.selectbox('Период обновления (минут)',[0,15,30,60],format_func=lambda n:'Только вручную' if n==0 else f'Каждые {n} минут',key='sync_interval')
-        st.caption('Полная загрузка 12 месяцев может занять несколько минут. Автообновление работает только при открытой вкладке и токене в памяти; проверка таймера раз в минуту. Это снимок данных, а не поток в реальном времени.')
+        st.caption('При открытии сначала восстанавливается сохранённый снимок. Обновление из Моего Склада работает при открытой вкладке; таймер проверяется раз в минуту. Первичная загрузка при отсутствии снимка может занять несколько минут. Это не поток в реальном времени.')
         if interval and not st.session_state.get('sync_token') and not (requested and retain): st.info('Для автообновления загрузите данные с флажком хранения токена в сессии.')
         if requested or quick or auto:
             try:
+                selected_token=(token.strip() if requested else '') or st.session_state.get('sync_token') or (config.token if config.authorized else '')
+                if not selected_token: raise MoySkladError('Введите токен или настройте постоянное подключение в Streamlit Secrets.')
+                cache=cache_for(selected_token)
+                # A repeated connect with the same key can restore an existing snapshot.
+                if requested and token.strip() and 'live_data' not in st.session_state and cache is not None:
+                    try:
+                        if restore(st.session_state,pd.Timestamp.now(tz='Europe/Moscow').date(),cache):
+                            if retain: st.session_state.sync_token=selected_token
+                            st.session_state.sync_disconnected=False
+                            st.session_state.sync_origin='managed' if selected_token==config.token else 'manual'
+                            st.rerun()
+                    except (StoreError,SnapshotError): pass
                 with st.status('Подключение…',expanded=True) as status:
                     def report(stage,count,total): status.update(label=f'{stage}: {count:,} / {total:,}' if total else stage)
-                    fresh=refresh(st.session_state,pd.Timestamp.now(tz='Europe/Moscow').date(),token=token if requested else None,progress=report,retain=retain if requested else True)
+                    fresh=refresh(st.session_state,pd.Timestamp.now(tz='Europe/Moscow').date(),token=selected_token,progress=report,retain=retain if requested and token.strip() else True,cache=cache)
+                    st.session_state.sync_disconnected=False
+                    st.session_state.sync_origin='managed' if selected_token==config.token else 'manual'
                     status.update(label='Данные проверены и загружены',state='complete',expanded=False)
                 st.success(f'Подключение выполнено: {len(fresh[0]):,} клиентов, {fresh[2].order_id.nunique():,} отгрузок.')
                 st.rerun()
             except MoySkladError as exc: st.session_state.live_error=str(exc)
             except (KeyError,TypeError,ValueError) as exc: st.session_state.live_error=f'Ошибка обработки данных ({type(exc).__name__}). Прежние данные сохранены. Сообщите этот код администратору.'
         if st.session_state.get('live_error'): st.error(st.session_state.live_error)
+        if st.session_state.get('sync_cache_error'): st.warning(st.session_state.sync_cache_error)
+        if st.session_state.get('sync_restored'): st.caption('Открыт сохранённый снимок. Его дата показана ниже; новые изменения появятся после следующего обновления.')
         if st.session_state.get('sync_success_at'):
             stamp=pd.Timestamp(st.session_state.sync_success_at,unit='s',tz='UTC').tz_convert('Europe/Moscow')
             st.caption(f'Успешное обновление: {stamp:%d.%m.%Y %H:%M} МСК')
-        if st.button('Отключить источник и очистить сессию'):
+        if st.button('Отключить источник в этой сессии'):
             for key in list(st.session_state):
                 if key.startswith(('live_','sync_','provider_','client_draft_','draft_')): del st.session_state[key]
+            st.session_state.sync_disconnected=True
             st.rerun()
 with st.container(key='topbar'):
     search_col,sync_col,status_col,user_col=st.columns([2.8,2,1.8,1.3],gap='small',vertical_alignment='center')
@@ -69,7 +147,7 @@ with st.container(key='topbar'):
     with status_col:
         if st.session_state.get('sync_success_at'):
             updated=pd.Timestamp(st.session_state.sync_success_at,unit='s',tz='UTC').tz_convert('Europe/Moscow')
-            st.markdown(f'<div class="top-status"><span class="status-dot"></span>Данные обновлены {updated:%d.%m.%Y %H:%M}<br>Мой Склад · МСК</div>',unsafe_allow_html=True)
+            st.markdown(f'<div class="top-status"><span class="status-dot"></span>Данные обновлены {updated:%d.%m.%Y %H:%M}<br>{'Сохранённый снимок' if st.session_state.get('sync_restored') else 'Мой Склад'} · МСК</div>',unsafe_allow_html=True)
         else: st.markdown('<div class="top-status"><span class="status-dot off"></span>Источник не подключён</div>',unsafe_allow_html=True)
     with user_col:
         display_name=user_name if user_id!='personal' else 'Мой кабинет'
@@ -94,8 +172,7 @@ if not account:
     st.error('API не вернул accountId. Записи не сохраняются, чтобы не смешивать разные аккаунты. Обновите подключение.')
     st.stop()
 try:
-    try: database_url=st.secrets.get('DATABASE_URL')
-    except (FileNotFoundError,st.errors.StreamlitSecretNotFoundError): database_url=None
+    database_url=config.database_url
     store=Store(Path(__file__).parent/'.runtime'/'moysklad.db',scope=f'{account}:{user_id}',database_url=database_url)
 except StoreError as exc:
     st.error(str(exc))
