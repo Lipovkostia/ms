@@ -77,6 +77,22 @@ class InterfaceTests(unittest.TestCase):
         at.radio[0].set_value('Эффективность').run()
         self.assertTrue(any(m.label == 'Обработано рекомендаций за период' and m.value == '1' for m in at.metric))
 
+    def test_connect_form_success_and_cached_analytics(self):
+        from sales_center.data import demo_data
+        from datetime import date
+        at=self.app()
+        next(x for x in at.selectbox if x.label=='Источник данных').set_value('Мой Склад').run()
+        with patch('sales_center.live_data.load_live',return_value=demo_data(date.today())) as api:
+            next(x for x in at.text_input if x.label=='API-токен Моего Склада').set_value('test-only')
+            next(x for x in at.button if x.label=='Загрузить / обновить данные').click().run()
+            self.assertFalse(at.exception)
+            self.assertEqual(api.call_args.kwargs['token'],'test-only')
+            self.assertTrue(any('Подключение выполнено' in s.value for s in at.success))
+            self.assertIn('live_analytics',at.session_state)
+            at.radio[0].set_value('Клиенты').run()
+            self.assertFalse(at.exception)
+            self.assertEqual(api.call_count,1)
+
     def test_invalid_dates(self):
         at = self.app()
         at.date_input[0].set_value(at.date_input[1].value.replace(year=2030)).run()

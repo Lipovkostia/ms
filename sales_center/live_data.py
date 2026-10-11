@@ -19,14 +19,19 @@ def normalize(counterparties,assortment,documents,currencies,positions):
     prods = {external_id(p): p for p in assortment}
     currency = {external_id(c): c for c in currencies}
     rows = []
+    excluded_internal = 0
+    excluded_empty = 0
     for doc in documents:
         if not doc.get('applicable'):
+            continue
+        if doc.get('agent',{}).get('meta',{}).get('type') == 'organization':
+            excluded_internal += 1
             continue
         cid = external_id(doc.get('agent',{}))
         if cid not in cp:
             raise MoySkladError('Контрагент отгрузки недоступен. Проверьте права чтения.')
         cur = currency.get(external_id(doc.get('rate',{}).get('currency',{})),{})
-        if str(cur.get('isoCode')) != '643':
+        if str(cur.get('isoCode')).upper() not in {'643', 'RUB'}:
             raise MoySkladError('MVP поддерживает только отгрузки в RUB. Обнаружена другая или неизвестная валюта.')
         doc_rows = []
         gross_total = 0.0
@@ -53,6 +58,8 @@ def normalize(counterparties,assortment,documents,currencies,positions):
                 revenue=round(net,2),cost=round(cost,2),profit=round(net-cost,2)))
         if not math.isclose(gross_total,float(doc['sum'])/100,abs_tol=max(.02,len(doc_rows)*.01)):
             raise MoySkladError('Сумма позиций не совпадает с суммой отгрузки. Требуется проверка скидок и НДС; данные не загружены.')
+        if not doc_rows:
+            excluded_empty += 1
         rows.extend(doc_rows)
     clients = pd.DataFrame([dict(client_id=local_id(cid),company=c.get('name','Без названия'),
                                 segment='Не указан',city=c.get('actualAddress') or 'Не указан') for cid,c in cp.items()],
@@ -62,15 +69,48 @@ def normalize(counterparties,assortment,documents,currencies,positions):
                             columns=['product_id','product','category','price','unit_cost'])
     lines = pd.DataFrame(rows,columns=['order_id','client_id','date','product_id','product','category','quantity','revenue','cost','profit'])
     lines['date'] = pd.to_datetime(lines['date'])
+    lines.attrs['excluded_internal_shipments'] = excluded_internal
+    lines.attrs['excluded_empty_shipments'] = excluded_empty
     if clients.client_id.duplicated().any() or products.product_id.duplicated().any():
         raise MoySkladError('Обнаружено совпадение внутренних идентификаторов. Загрузка остановлена.')
     return clients,products,lines
 
-def load_live(today, token=None):
+def load_live(today, token=None, progress=None):
     api = MoySkladClient(token=token)
-    start = pd.Timestamp(today)-pd.DateOffset(months=12)
-    end = pd.Timestamp(today)+pd.Timedelta(days=1)
-    docs = api.list_entities('demand',{'filter':f'applicable=true;moment>={start:%Y-%m-%d} 00:00:00;moment<{end:%Y-%m-%d} 00:00:00'})
-    positions = {doc['id']:api.demand_positions(doc['id']) for doc in docs}
-    return normalize(api.list_entities('counterparty'),api.list_entities('assortment'),docs,
-                     api.list_entities('currency'),positions)
+    def report(stage, count=0, total=0):
+        if progress:
+            progress(stage, count, total)
+    def collect(entity, label, params=None):
+        report(label)
+        return api.list_entities(entity,params,progress=lambda count,total: report(label,count,total))
+    try:
+        # Verify credentials before starting an expensive shipment read.
+        currencies = collect('currency','Проверка подключения и валют')
+        start = pd.Timestamp(today)-pd.DateOffset(months=12)
+        end = pd.Timestamp(today)+pd.Timedelta(days=1)
+        docs = collect('demand','Загрузка отгрузок',{
+            'filter':f'applicable=true;moment>={start:%Y-%m-%d} 00:00:00;moment<{end:%Y-%m-%d} 00:00:00',
+            'expand':'positions.assortment','fields':'stock'})
+        if len({doc['id'] for doc in docs}) != len(docs):
+            raise MoySkladError('Отгрузки изменились во время загрузки. Повторите подключение.')
+        positions = {}
+        for index,doc in enumerate(docs):
+            embedded = doc.get('positions',{})
+            rows = embedded.get('rows')
+            if rows is not None and len(rows) == embedded.get('meta',{}).get('size',len(rows)):
+                positions[doc['id']] = rows
+            else:
+                report('Загрузка дополнительных позиций',index+1,len(docs))
+                positions[doc['id']] = api.demand_positions(doc['id'])
+        cp = collect('counterparty','Загрузка контрагентов')
+        client_ids = {external_id(c) for c in cp}
+        if any(external_id(d.get('agent',{})) not in client_ids and d.get('agent',{}).get('meta',{}).get('type') != 'organization' for d in docs):
+            archived = collect('counterparty','Загрузка архивных контрагентов',{'filter':'archived=true'})
+            merged = {external_id(c):c for c in cp}
+            merged.update({external_id(c):c for c in archived})
+            cp = list(merged.values())
+        products = collect('assortment','Загрузка товаров')
+        report('Проверка и обработка данных')
+        return normalize(cp,products,docs,currencies,positions)
+    finally:
+        api.session.close()

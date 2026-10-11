@@ -19,8 +19,10 @@ def client_summary(clients, lines, today):
     today = pd.Timestamp(today).normalize()
     all_orders = orders(lines)
     rows = []
+    grouped = {cid: frame.sort_values('date') for cid,frame in all_orders.groupby('client_id')}
+    empty_orders = all_orders.iloc[:0]
     for c in clients.itertuples():
-        o = all_orders[all_orders.client_id == c.client_id].sort_values('date')
+        o = grouped.get(c.client_id, empty_orders)
         gaps = o.date.diff().dt.days.dropna()
         # Robust median avoids a single missed order redefining the normal cycle.
         cycle = float(gaps.median()) if len(gaps) >= 2 else None

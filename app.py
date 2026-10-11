@@ -25,25 +25,37 @@ TODAY = pd.Timestamp.now(tz='Europe/Moscow').date()
 @st.cache_data
 def load(today):
     return demo_data(today)
+connection_panel = st.empty()
 with st.sidebar:
     source = st.selectbox('Источник данных', ['Демонстрационные данные', 'Мой Склад'])
     if source == 'Мой Склад':
-        st.caption('Только чтение проведённых отгрузок в RUB за 12 месяцев. Возвраты не вычитаются. Выручка без НДС.')
-        with st.form('moysklad_connect', clear_on_submit=True):
+        st.caption('Только чтение проведённых отгрузок в RUB за 12 месяцев. Возвраты не вычитаются. Выручка без НДС. Первичная загрузка большой базы может занять несколько минут; прогресс виден в основной области.')
+        with st.form('moysklad_connect', clear_on_submit=True, enter_to_submit=True):
             token = st.text_input('API-токен Моего Склада', type='password', help='Токен передаётся только API Моего Склада. В файлы и базу он не записывается. После отправки поле очищается.')
             st.caption('При пустом поле используется MOYSKLAD_TOKEN из окружения. Для обновления введите токен заново.')
             connect = st.form_submit_button('Загрузить / обновить данные')
         if connect:
             try:
-                with st.spinner('Загрузка контрагентов, товаров и отгрузок…'):
-                    fresh = load_live(TODAY, token=token)
+                with connection_panel.container():
+                    with st.status('Подключение к Моему Складу…', expanded=True) as status:
+                        def report(stage, count, total):
+                            status.update(label=f'{stage}: {count:,} / {total:,}' if total else stage)
+                        fresh = load_live(TODAY, token=token, progress=report)
+                        status.update(label='Данные загружены. Подготовка аналитики…', state='complete', expanded=False)
                 st.session_state.live_data = fresh
+                st.session_state.pop('live_analytics', None)
+                st.session_state.pop('live_error', None)
+                connection_panel.success(f'Подключение выполнено: {len(fresh[0]):,} клиентов, {fresh[2].order_id.nunique():,} отгрузок.')
                 st.session_state.live_loaded = pd.Timestamp.now(tz='Europe/Moscow').strftime('%d.%m.%Y %H:%M МСК')
             except MoySkladError as exc:
-                st.error(str(exc))
+                st.session_state.live_error = str(exc)
+                connection_panel.error(str(exc))
             except (KeyError, TypeError, ValueError):
-                st.error('Получены неподдерживаемые данные API. Загрузка отменена; прежние данные сохранены.')
+                st.session_state.live_error = 'Получены неподдерживаемые данные API. Загрузка отменена; прежние данные сохранены.'
+                connection_panel.error(st.session_state.live_error)
 if source == 'Мой Склад':
+    if st.session_state.get('live_error') and not connect:
+        connection_panel.error(st.session_state.live_error)
     if 'live_data' not in st.session_state:
         st.title('Подключение Моего Склада')
         st.info('В боковой панели вставьте новый API-токен в поле «API-токен Моего Склада» и нажмите «Загрузить / обновить данные». После успешной загрузки появятся разделы с данными вашего аккаунта.')
@@ -54,8 +66,14 @@ else:
 if clients.empty:
     st.info('Источник не содержит клиентов. Проверьте доступ и данные.')
     st.stop()
-summary = client_summary(clients, lines, TODAY)
-recommendations = generate(summary, lines, products, TODAY)
+if source == 'Мой Склад' and 'live_analytics' in st.session_state:
+    summary, recommendations = st.session_state.live_analytics
+else:
+    with st.spinner('Расчёт аналитики…'):
+        summary = client_summary(clients, lines, TODAY)
+        recommendations = generate(summary, lines, products, TODAY)
+    if source == 'Мой Склад':
+        st.session_state.live_analytics = (summary, recommendations)
 try:
     store = Store(Path(__file__).parent/'.runtime'/('sales.db' if source == 'Демонстрационные данные' else 'moysklad.db'))
 except (sqlite3.Error, OSError):
@@ -77,6 +95,12 @@ if source == 'Демонстрационные данные':
     st.caption('ДЕМОНСТРАЦИОННЫЙ РЕЖИМ · Все компании, заказы и финансовые показатели вымышлены. Задачи сохраняются локально в SQLite.')
 else:
     st.caption('МОЙ СКЛАД · Загружено: ' + st.session_state.live_loaded + '. Проведённые отгрузки в RUB, выручка без НДС, без вычета возвратов. Это показатели отгрузок, а не чистых продаж.')
+    excluded_internal = lines.attrs.get('excluded_internal_shipments',0)
+    if excluded_internal:
+        st.caption(f'Внутренние отгрузки между своими организациями: {excluded_internal}. Они исключены из клиентской аналитики.')
+    excluded_empty = lines.attrs.get('excluded_empty_shipments',0)
+    if excluded_empty:
+        st.caption(f'Пустые отгрузки без позиций: {excluded_empty}. Они не считаются покупками.')
     if lines.cost.isna().any():
         st.warning('Для части позиций API не вернул себестоимость. Итоги валовой прибыли и маржинальности не рассчитываются для таких периодов.')
 with st.expander('Период аналитики', expanded=False):
