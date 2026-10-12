@@ -19,7 +19,7 @@ from sales_center.browser_store import render_and_restore, save_request, forget_
 from sales_center.product_workspace import render as render_product_workspace
 from sales_center.price_catalog import load_catalog
 from sales_center.client_blocks_ui import render as render_client_blocks
-from sales_center.client_segments import load_client_activity
+from sales_center.activity_api import load_client_activity
 
 st.set_page_config(page_title='AI Sales Center', page_icon='📈', layout='wide')
 st.markdown(CSS,unsafe_allow_html=True)

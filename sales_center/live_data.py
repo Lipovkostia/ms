@@ -3,7 +3,8 @@ import hashlib
 import math
 from urllib.parse import urlsplit
 import pandas as pd
-from .moysklad import MoySkladClient, MoySkladError
+from .moysklad import MoySkladError
+from .activity_api import ClientActivityClient as MoySkladClient
 
 
 def external_id(row):

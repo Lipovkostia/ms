@@ -60,21 +60,6 @@ def select_block(frame,block,today):
 
 
 def load_client_activity(token,clients,today):
-    """Upgrade older saved snapshots without rereading shipment positions."""
-    from .moysklad import MoySkladClient
-    api=MoySkladClient(token)
-    try:
-        cp=api.list_entities('counterparty')
-        archived=api.list_entities('counterparty',{'filter':'archived=true'})
-        cp=list({external_id(c):c for c in cp+archived}.values())
-        employees=api.list_entities('employee')
-        currencies={external_id(c):c for c in api.list_entities('currency')}
-        history=api.list_entities('demand',{'filter':'applicable=true'})
-        for doc in history:
-            if doc.get('agent',{}).get('meta',{}).get('type')=='organization': continue
-            currency=currencies.get(external_id(doc.get('rate',{}).get('currency',{})),{})
-            if str(currency.get('isoCode')).upper() not in {'643','RUB'}:
-                raise MoySkladError('История содержит другую или неизвестную валюту. Суммы не смешиваются.')
-        new=api.list_entities('customerorder',{'filter':f'created>={(pd.Timestamp(today)-pd.Timedelta(days=10)):%Y-%m-%d} 00:00:00'})
-        return enrich(clients,cp,employees,history,new,today)
-    finally: api.session.close()
+    """Compatibility entry point for integrations importing the former module."""
+    from .activity_api import load_client_activity as load_activity
+    return load_activity(token,clients,today)
