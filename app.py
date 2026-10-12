@@ -17,7 +17,7 @@ from sales_center.presentation import safe, pill, stat, client_row, purchase_cha
 from sales_center.settings import connections, model_picker
 from sales_center.browser_store import render_and_restore, save_request, forget_request
 from sales_center.product_workspace import render as render_product_workspace
-from sales_center.live_data import load_catalog
+from sales_center.price_catalog import load_catalog
 
 st.set_page_config(page_title='AI Sales Center', page_icon='📈', layout='wide')
 st.markdown(CSS,unsafe_allow_html=True)
