@@ -94,4 +94,5 @@ h1{font-size:25px!important;letter-spacing:-.025em}h2{font-size:20px!important}h
 [data-testid="stLayoutWrapper"]:has(>.st-key-device-store){height:0;min-height:0}
 .st-key-product-workspace .stButton>button{text-align:left;white-space:normal;justify-content:flex-start;min-height:44px}
 @media(max-width:1099px){.st-key-product-workspace>[data-testid="stLayoutWrapper"]>[data-testid="stHorizontalBlock"]{flex-wrap:wrap}.st-key-product-workspace>[data-testid="stLayoutWrapper"]>[data-testid="stHorizontalBlock"]>[data-testid="stColumn"]{flex:1 1 100%!important;min-width:100%!important}}
+@media(max-width:640px){.st-key-crm-blocks [data-testid="stHorizontalBlock"]{flex-wrap:wrap}.st-key-crm-blocks [data-testid="stColumn"]{flex:1 1 100%!important;min-width:100%!important}}
 </style>'''

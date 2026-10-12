@@ -1,5 +1,6 @@
 from pathlib import Path
 from datetime import date
+import pandas as pd
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -29,6 +30,27 @@ class InterfaceTests(unittest.TestCase):
         at.run()
         self.assertFalse(at.exception)
         return at
+    def test_client_blocks_filter_and_open_card(self):
+        at=self.app()
+        c,p,l=at.session_state['live_data']
+        c=c.copy()
+        today=pd.Timestamp.now(tz='Europe/Moscow').tz_localize(None).normalize()
+        c['purchase_history']=[[dict(date=(today-pd.Timedelta(days=d)).isoformat(),amount=100) for d in [1,3]] for _ in range(len(c))]
+        c['owner_employee']=['Анна']*len(c)
+        c['recent_order_dates']=[[] for _ in range(len(c))]
+        c['crm_history_loaded']=True
+        at.session_state['live_data']=(c,p,l)
+        at.run()
+        self.assertFalse(at.exception)
+        next(w for w in at.multiselect if w.key=='crm_managers').set_value(['Анна']).run()
+        buttons=[b for b in at.button if b.key and b.key.startswith('crm_client_')]
+        self.assertTrue(buttons)
+        cid=int(buttons[0].key.rsplit('_',1)[1])
+        buttons[0].click().run()
+        self.assertFalse(at.exception)
+        self.assertEqual(at.session_state['page'],'Карточка клиента')
+        self.assertEqual(at.session_state['workspace_client'],cid)
+
     def test_all_sections(self):
         at=self.app()
         for page in next(r for r in at.radio if r.key=='page').options:

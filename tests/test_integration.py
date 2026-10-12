@@ -61,7 +61,7 @@ class IntegrationTests(unittest.TestCase):
         docs[0]['positions']={'rows':positions['order'],'meta':{'size':1}}
         with patch('sales_center.live_data.MoySkladClient') as factory:
             api=factory.return_value
-            api.list_entities.side_effect=[cur,docs,cp,products]
+            api.list_entities.side_effect=[cur,docs,cp,products,[],docs,[]]
             progress=Mock()
             result=load_live(date(2026,10,12),token='test-only',progress=progress)
             self.assertEqual(len(result[2]),1)

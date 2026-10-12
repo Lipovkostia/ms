@@ -12,7 +12,7 @@ class MoySkladError(RuntimeError):
 
 class MoySkladClient:
     BASE = 'https://api.moysklad.ru/api/remap/1.2'
-    ENTITIES = {'counterparty', 'assortment', 'demand', 'currency'}
+    ENTITIES = {'counterparty', 'assortment', 'demand', 'currency', 'employee', 'customerorder'}
     def __init__(self, token=None):
         token = (token or os.environ.get('MOYSKLAD_TOKEN') or '').strip()
         if not token:

@@ -18,6 +18,8 @@ from sales_center.settings import connections, model_picker
 from sales_center.browser_store import render_and_restore, save_request, forget_request
 from sales_center.product_workspace import render as render_product_workspace
 from sales_center.price_catalog import load_catalog
+from sales_center.client_blocks_ui import render as render_client_blocks
+from sales_center.client_segments import load_client_activity
 
 st.set_page_config(page_title='AI Sales Center', page_icon='📈', layout='wide')
 st.markdown(CSS,unsafe_allow_html=True)
@@ -351,6 +353,33 @@ if page == 'Главная':
     st.caption('Рекомендации учитывают всю доступную историю, независимо от выбранного периода графиков.')
     recommendation_cards(recommendations.sort_values('effect',ascending=False),5)
 elif page in ['Клиенты','Карточка клиента']:
+    if page=='Клиенты':
+        def open_block_client(value):
+            st.session_state.workspace_client=int(value)
+            st.session_state.clients_search=''
+            st.session_state.clients_priorities=[]
+            st.session_state.global_search=''
+            st.session_state.page='Карточка клиента'
+        def refresh_client_blocks():
+            token=st.session_state.get('sync_token')
+            if not token:
+                st.session_state.moysklad_panel=True
+                return
+            try:
+                if 'crm_history_loaded' not in st.session_state.live_data[0]:
+                    frames=st.session_state.live_data
+                    updated=load_client_activity(token,frames[0],TODAY)
+                    from sales_center.sync import assign
+                    import time
+                    assign(st.session_state,(updated,frames[1],frames[2]),TODAY,time.time())
+                    cache_for(token).save(st.session_state.live_data,st.session_state.sync_success_at)
+                else:
+                    refresh(st.session_state,TODAY,token,retain=True,cache=cache_for(token))
+                if st.session_state.get('sync_origin')=='device':
+                    save_request(st.session_state,token,st.session_state.live_data,st.session_state.sync_success_at,st.session_state.get('sync_interval',30))
+            except (MoySkladError,StoreError,SnapshotError) as exc:
+                st.session_state.live_error=str(exc)
+        render_client_blocks(clients,TODAY,store,open_block_client,refresh_client_blocks)
     active_count=int((summary.order_count>0).sum())
     delayed_count=int((summary.cycle_ratio>1.5).sum())
     potential=recommendations.groupby('client_id').effect.max().sum() if len(recommendations) else 0
@@ -400,6 +429,11 @@ elif page in ['Клиенты','Карточка клиента']:
         own=period(lines[lines.client_id==cid],start,end)
         with center,st.container(border=True,key='client-detail'):
             st.caption('ОБЗОР КЛИЕНТА')
+            if contact.get('crm_history_loaded'):
+                from sales_center.client_segments import activity
+                indicators=activity(clients[clients.client_id==cid],TODAY).iloc[0]
+                st.caption(f"Владелец-сотрудник: {indicators.owner_employee} · сделок за всю историю: {indicators.purchase_count} · сумма покупок: {rub(indicators.total_amount)}")
+                if indicators.recent_orders: st.success(f'Новый заказ в базе за последние 10 дней · {indicators.recent_orders}',icon='🟢')
             st.markdown(f'<div class="workspace-heading"><h2>{safe(c.company)}</h2>{pill(c.priority+" приоритет","mint" if c.priority=="Высокий" else "blue")}</div>',unsafe_allow_html=True)
             badges=pill('Повторные покупки' if c.order_count>1 else 'Одна покупка' if c.order_count==1 else 'Пока без покупок')
             if c.segment!='Не указан': badges+=' '+pill(c.segment,'purple')
