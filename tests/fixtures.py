@@ -22,6 +22,12 @@ def demo_data(today=None):
         (11, 'Артишоки, банка', 'Деликатесы', 680, 420),
         (12, 'Бальзамический уксус, л', 'Деликатесы', 1100, 720),
     ], columns=['product_id', 'product', 'category', 'price', 'unit_cost'])
+    products['archived']=False
+    products['entity_type']='product'
+    products['code']=['TEST-'+str(pid) for pid in products.product_id]
+    products['article']=''
+    products['unit']='ед. товара'
+    products['sale_prices']=[[{'id':'wholesale','name':'Цена опт безнал','value':float(price),'currency':'RUB'}] for price in products.price]
     names = ['Гастро', 'Вкус', 'Олива', 'Прованс', 'Деликат', 'Терра', 'Лавка', 'Сырный дом', 'Палитра', 'Премиум']
     segments = ['Ресторан', 'Магазин', 'Оптовик', 'Отель', 'Кейтеринг']
     cities = ['Москва', 'Санкт-Петербург', 'Казань', 'Сочи', 'Екатеринбург']

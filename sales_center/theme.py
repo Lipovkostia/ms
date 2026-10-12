@@ -89,4 +89,9 @@ h1{font-size:25px!important;letter-spacing:-.025em}h2{font-size:20px!important}h
 .st-key-client-list [data-testid="stButton"] button:focus-visible{outline:2px solid #16b887;outline-offset:2px}
 .st-key-open_settings button{background:#eff8f5;color:#13755b;border:1px solid #cfe8df;width:100%}
 [data-testid="stButton"] button:disabled,[data-testid="stFormSubmitButton"] button:disabled{cursor:not-allowed}
+
+.st-key-device-store{height:0;min-height:0;overflow:hidden}
+[data-testid="stLayoutWrapper"]:has(>.st-key-device-store){height:0;min-height:0}
+.st-key-product-workspace .stButton>button{text-align:left;white-space:normal;justify-content:flex-start;min-height:44px}
+@media(max-width:1099px){.st-key-product-workspace>[data-testid="stLayoutWrapper"]>[data-testid="stHorizontalBlock"]{flex-wrap:wrap}.st-key-product-workspace>[data-testid="stLayoutWrapper"]>[data-testid="stHorizontalBlock"]>[data-testid="stColumn"]{flex:1 1 100%!important;min-width:100%!important}}
 </style>'''

@@ -22,6 +22,7 @@ class InterfaceTests(unittest.TestCase):
     def app(self,loaded=True):
         at=AppTest.from_file(str(ROOT/'app.py'),default_timeout=30)
         at.secrets.clear()
+        at.session_state['device_ready']=True
         if loaded:
             c,p,l=demo_data(date.today());c.attrs['account_id']='test-account'
             at.session_state['live_data']=(c,p,l)
@@ -30,8 +31,8 @@ class InterfaceTests(unittest.TestCase):
         return at
     def test_all_sections(self):
         at=self.app()
-        for page in at.radio[0].options:
-            at.radio[0].set_value(page).run()
+        for page in next(r for r in at.radio if r.key=='page').options:
+            next(r for r in at.radio if r.key=='page').set_value(page).run()
             self.assertFalse(at.exception,page)
             self.assertIn(at.session_state['page'],[t.value for t in at.title])
     def test_empty_source_no_demo_fallback(self):
@@ -43,7 +44,7 @@ class InterfaceTests(unittest.TestCase):
         self.assertFalse(at.exception)
     def test_search_and_saved_draft_task(self):
         at=self.app()
-        at.radio[0].set_value('Клиенты').run()
+        next(r for r in at.radio if r.key=='page').set_value('Клиенты').run()
         next(t for t in at.text_input if t.label.startswith('Поиск')).set_value('несуществующий').run()
         self.assertTrue(any('не найдены' in i.value for i in at.info))
         next(t for t in at.text_input if t.label.startswith('Поиск')).set_value('').run()
@@ -53,7 +54,7 @@ class InterfaceTests(unittest.TestCase):
         self.assertFalse(at.exception)
         next(b for b in at.button if b.label=='Создать задачу').click().run()
         self.assertEqual(len(self.store.tasks()),1)
-        at.radio[0].set_value('Задачи').run()
+        next(r for r in at.radio if r.key=='page').set_value('Задачи').run()
         next(s for s in at.selectbox if s.label=='Статус').set_value('Выполнена')
         next(b for b in at.button if b.label=='Сохранить изменения').click().run()
         self.assertEqual(self.store.tasks().iloc[0]['status'],'Выполнена')
@@ -95,7 +96,7 @@ class InterfaceTests(unittest.TestCase):
             second.run();self.assertFalse(second.exception)
             self.assertTrue(second.session_state['sync_restored'])
             self.assertEqual(len(second.session_state['live_data'][0]),100)
-            second.radio[0].set_value('Главная').run()
+            next(r for r in second.radio if r.key=='page').set_value('Главная').run()
             api.assert_not_called()
             self.assertFalse(second.exception)
         self.assertEqual(second.session_state['sync_interval'],30)
@@ -132,3 +133,15 @@ class InterfaceTests(unittest.TestCase):
         next(b for b in at.button if b.key=='sync_settings').click().run()
         self.assertFalse(at.exception)
         self.assertEqual(at.session_state['page'],'Настройки')
+    def test_price_list_buyer_opens_correct_client_and_clears_filters(self):
+        at=self.app()
+        next(r for r in at.radio if r.key=='page').set_value('Товарная аналитика').run()
+        self.assertFalse(at.exception)
+        first=next(b for b in at.button if b.key and b.key.startswith('price_buyer_'))
+        target=int(first.key.removeprefix('price_buyer_'))
+        first.click().run()
+        self.assertFalse(at.exception)
+        self.assertEqual(at.session_state['page'],'Клиенты')
+        self.assertEqual(at.session_state['workspace_client'],target)
+        self.assertEqual(at.session_state['global_search'],'')
+        self.assertEqual(at.session_state['clients_priorities'],[])

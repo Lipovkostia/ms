@@ -15,6 +15,9 @@ from sales_center.identity import identity
 from sales_center.theme import CSS
 from sales_center.presentation import safe, pill, stat, client_row, purchase_chart, category_chart
 from sales_center.settings import connections, model_picker
+from sales_center.browser_store import render_and_restore, save_request, forget_request
+from sales_center.product_workspace import render as render_product_workspace
+from sales_center.live_data import load_catalog
 
 st.set_page_config(page_title='AI Sales Center', page_icon='📈', layout='wide')
 st.markdown(CSS,unsafe_allow_html=True)
@@ -36,13 +39,28 @@ def cache_for(token):
         st.session_state.sync_cache_error='Хранилище снимков недоступно. Проверьте настройки базы. Ключ остаётся в защищённых настройках.'
         return None
 
+with st.container(key='device-store'):
+    render_and_restore(st.session_state,user_id,TODAY)
+if st.session_state.pop('device_needs_load',False) and not st.session_state.get('sync_disconnected'):
+    try:
+        with st.status('Восстановление подключения с этого устройства…',expanded=True) as status:
+            def device_report(stage,count,total): status.update(label=f'{stage}: {count:,} / {total:,}' if total else stage)
+            device_token=st.session_state.sync_token
+            fresh=refresh(st.session_state,TODAY,token=device_token,retain=True,progress=device_report,cache=cache_for(device_token))
+            st.session_state.sync_origin='device'
+            save_request(st.session_state,device_token,fresh,st.session_state.sync_success_at,st.session_state.get('sync_interval',30))
+            status.update(label='Подключение восстановлено',state='complete',expanded=False)
+        st.rerun()
+    except MoySkladError as exc: st.session_state.live_error=str(exc)
+    except (KeyError,TypeError,ValueError): st.session_state.live_error='Не удалось восстановить данные. Ключ сохранён: попробуйте обновление позже.'
+
 # Removing access or a configured key must also clear a previously managed session.
 if st.session_state.get('sync_origin')=='managed' and not (config.token and config.authorized):
     for key in list(st.session_state):
         if key.startswith(('live_','sync_','client_','draft_','workspace_')): del st.session_state[key]
 
 # Managed credentials survive application deployment in Streamlit Secrets.
-if config.automatic and not st.session_state.get('sync_disconnected'):
+if config.automatic and not st.session_state.get('sync_disconnected') and st.session_state.get('sync_origin')!='device':
     managed=source_id(config.token)
     previous=st.session_state.get('sync_managed_source')
     if previous!=managed:
@@ -87,12 +105,15 @@ with st.sidebar:
 
 @st.fragment(run_every='60s')
 def sync_panel():
-    interval=st.session_state.get('sync_interval',0)
+    if 'sync_interval' not in st.session_state: st.session_state.sync_interval=30
+    interval=st.session_state.get('sync_interval',30)
     auto=due(st.session_state,interval)
     panel_label='↻ Подключение и обновление' if page=='Настройки' else '↻ Синхронизировать с Мой Склад' if 'live_data' in st.session_state else '↻ Подключить Мой Склад'
     popover_options={'key':'moysklad_panel','on_change':'rerun'} if 'on_change' in inspect.signature(st.popover).parameters else {}
     with st.popover(panel_label,width='stretch',**popover_options):
-        if config.token:
+        if st.session_state.get('sync_device_saved'):
+            st.success('Подключение запомнено на этом устройстве. После обновления сайта токен вводить не нужно.')
+        elif config.token:
             if config.authorized:
                 st.success('Постоянный токен настроен. После обновления сайта он берётся из защищённых настроек хостинга.')
                 if st.session_state.get('sync_disconnected') and st.button('Восстановить постоянное подключение'):
@@ -102,15 +123,23 @@ def sync_panel():
             else:
                 st.warning('Токен сохранён, но автоматический доступ закрыт. Настройте вход сотрудников либо закрытый доступ Streamlit Cloud и MOYSKLAD_PRIVATE_DEPLOYMENT=true.')
         else:
-            st.caption('Чтобы не вводить ключ после обновления, один раз добавьте MOYSKLAD_TOKEN в защищённые настройки хостинга. Нажмите «Настроить постоянное подключение» ниже.')
+            st.caption('Введите токен один раз и оставьте флажок «Запомнить подключение». Ключ и снимок сохранятся зашифрованными в этом браузере — настройки хостинга не нужны.')
+        checking_device=not st.session_state.get('device_ready',False)
+        if checking_device:
+            st.caption('Проверяем сохранённое подключение в браузере…')
+            if st.button('Ввести токен вручную',key='skip_device_check'):
+                st.session_state.device_ready=True
+                st.session_state._device_ignore_restore=True
+                st.rerun()
         with st.form('moysklad_connect',clear_on_submit=True):
-            token=st.text_input('API-токен Моего Склада',type='password',help='При постоянном подключении оставьте поле пустым. Новый ввод временно переключает источник этой сессии.')
-            retain=st.checkbox('Держать введённый токен в памяти этой сессии для обновления',value=True)
-            requested=st.form_submit_button('Загрузить / обновить данные')
+            token=st.text_input('API-токен Моего Склада',type='password',disabled=checking_device,help='При постоянном подключении оставьте поле пустым. Новый ввод временно переключает источник этой сессии.')
+            remember=st.checkbox('Запомнить подключение на этом устройстве',value=True)
+            retain=True
+            requested=st.form_submit_button('Загрузить / обновить данные',disabled=checking_device)
         quick=st.button('Обновить сейчас',type='primary',disabled=not st.session_state.get('sync_token'),help='Для обновления сначала загрузите данные с сохранением токена в сессии или настройте постоянное подключение')
         interval=st.selectbox('Период обновления (минут)',[0,15,30,60],format_func=lambda n:'Только вручную' if n==0 else f'Каждые {n} минут',key='sync_interval')
         st.caption('При открытии сначала восстанавливается сохранённый снимок. Обновление из Моего Склада работает при открытой вкладке; таймер проверяется раз в минуту. Первичная загрузка при отсутствии снимка может занять несколько минут. Это не поток в реальном времени.')
-        if interval and not st.session_state.get('sync_token') and not (requested and retain): st.info('Для автообновления загрузите данные с флажком хранения токена в сессии.')
+        if interval and not st.session_state.get('sync_token') and not (requested and retain): st.info('Для автообновления сначала подключите Мой Склад. Токен останется в памяти текущей сессии, а флажок «Запомнить подключение» сохранит его на устройстве.')
         if requested or quick or auto:
             try:
                 selected_token=(token.strip() if requested else '') or st.session_state.get('sync_token') or (config.token if config.authorized else '')
@@ -122,21 +151,30 @@ def sync_panel():
                         if restore(st.session_state,pd.Timestamp.now(tz='Europe/Moscow').date(),cache):
                             if retain: st.session_state.sync_token=selected_token
                             st.session_state.sync_disconnected=False
-                            st.session_state.sync_origin='managed' if selected_token==config.token else 'manual'
+                            st.session_state.sync_origin='device' if remember else 'managed' if selected_token==config.token else 'manual'
+                            if remember:
+                                save_request(st.session_state,selected_token,st.session_state.live_data,st.session_state.sync_success_at,st.session_state.get('sync_interval',30))
                             st.rerun()
                     except (StoreError,SnapshotError): pass
                 with st.status('Подключение…',expanded=True) as status:
                     def report(stage,count,total): status.update(label=f'{stage}: {count:,} / {total:,}' if total else stage)
                     fresh=refresh(st.session_state,pd.Timestamp.now(tz='Europe/Moscow').date(),token=selected_token,progress=report,retain=retain if requested and token.strip() else True,cache=cache)
                     st.session_state.sync_disconnected=False
-                    st.session_state.sync_origin='managed' if selected_token==config.token else 'manual'
+                    previous_origin=st.session_state.get('sync_origin')
+                    keep_device=remember if requested else previous_origin=='device'
+                    if requested and not remember: st.session_state.sync_device_saved=False
+                    st.session_state.sync_origin='device' if keep_device else 'managed' if selected_token==config.token else 'manual'
+                    if keep_device:
+                        save_request(st.session_state,selected_token,fresh,st.session_state.sync_success_at,st.session_state.get('sync_interval',30))
                     status.update(label='Данные проверены и загружены',state='complete',expanded=False)
                 st.success(f'Подключение выполнено: {len(fresh[0]):,} клиентов, {fresh[2].order_id.nunique():,} отгрузок.')
                 st.rerun()
             except MoySkladError as exc: st.session_state.live_error=str(exc)
             except (KeyError,TypeError,ValueError) as exc: st.session_state.live_error=f'Ошибка обработки данных ({type(exc).__name__}). Прежние данные сохранены. Сообщите этот код администратору.'
         if st.session_state.get('live_error'): st.error(st.session_state.live_error)
-        if st.session_state.get('sync_cache_error'): st.warning(st.session_state.sync_cache_error)
+        if st.session_state.get('sync_cache_error') and not st.session_state.get('sync_device_saved'): st.warning(st.session_state.sync_cache_error)
+        if st.session_state.get('device_pending'): st.caption('Сохраняем подключение на устройстве…')
+        if st.session_state.get('device_error'): st.warning(st.session_state.device_error)
         if st.session_state.get('sync_restored'): st.caption('Открыт сохранённый снимок. Его дата показана ниже; новые изменения появятся после следующего обновления.')
         if st.session_state.get('sync_success_at'):
             stamp=pd.Timestamp(st.session_state.sync_success_at,unit='s',tz='UTC').tz_convert('Europe/Moscow')
@@ -144,6 +182,12 @@ def sync_panel():
         if page!='Настройки':
             if st.button('Настроить постоянное подключение',key='sync_settings',on_click=navigate,args=('Настройки',),width='stretch'):
                 st.rerun()
+        if st.button('Забыть подключение на этом устройстве'):
+            forget_request(st.session_state)
+            for key in list(st.session_state):
+                if key.startswith(('live_','sync_','client_draft_','draft_')): del st.session_state[key]
+            st.session_state.sync_disconnected=True
+            st.rerun()
         if st.button('Отключить источник в этой сессии'):
             for key in list(st.session_state):
                 if key.startswith(('live_','sync_','provider_','client_draft_','draft_')): del st.session_state[key]
@@ -217,6 +261,10 @@ def rub(value):
     return f'{value:,.0f} ₽'.replace(',', ' ') if pd.notna(value) else 'Нет данных'
 
 def open_client(cid):
+    st.session_state.global_search=''
+    st.session_state.clients_search=''
+    st.session_state.clients_priorities=[]
+    st.session_state.client_list_page=1
     st.session_state.client_id = int(cid)
     st.session_state.workspace_client = int(cid)
     st.session_state.page = 'Карточка клиента'
@@ -320,8 +368,8 @@ elif page in ['Клиенты','Карточка клиента']:
         left,center,right=st.columns([1.02,1.65,1.35],gap='medium')
         with left,st.container(border=True,key='client-list'):
             st.subheader('Приоритетные клиенты')
-            search=st.text_input('Поиск по названию компании или городу',placeholder='Название компании или город',label_visibility='collapsed')
-            priorities=st.multiselect('Приоритет',['Высокий','Средний','Низкий'],placeholder='Все приоритеты',label_visibility='collapsed')
+            search=st.text_input('Поиск по названию компании или городу',placeholder='Название компании или город',label_visibility='collapsed',key='clients_search')
+            priorities=st.multiselect('Приоритет',['Высокий','Средний','Низкий'],placeholder='Все приоритеты',label_visibility='collapsed',key='clients_priorities')
             view=summary[summary.company.str.contains(search,case=False,regex=False)|summary.city.str.contains(search,case=False,regex=False)]
             if global_search:
                 matching=clients.company.str.contains(global_search,case=False,regex=False)|clients.city.str.contains(global_search,case=False,regex=False)
@@ -445,18 +493,42 @@ elif page == 'Возврат клиентов':
     st.caption('Клиенты с недостаточной историей не классифицируются как потерянные. Задержка — сигнал для разговора, а не подтверждение потери клиента.')
     recommendation_cards(recommendations[recommendations.kind == 'return'])
 elif page == 'Товарная аналитика':
-    cats = st.multiselect('Категории',products.category.unique())
-    frame = selected[selected.category.isin(cats)] if cats else selected
-    kpis(frame)
-    graph(frame)
-    if not frame.empty:
-        category = frame.groupby('category',as_index=False).revenue.sum().rename(columns={'category':'Категория','revenue':'Оборот, ₽'})
-        st.plotly_chart(px.bar(category,x='Категория',y='Оборот, ₽',color_discrete_sequence=['#14946B']),width='stretch')
-        st.subheader('Популярные товары')
-        st.dataframe(frame.groupby('product',as_index=False)[['quantity','revenue','profit']].agg(lambda v: v.sum() if v.notna().all() else float('nan')).sort_values('revenue',ascending=False).rename(columns={'product':'Товар','quantity':'Количество','revenue':'Оборот, ₽','profit':'Валовая прибыль, ₽'}),hide_index=True,width='stretch')
-        st.subheader('Сопутствующие покупки')
-        st.caption('Число заказов, в которых встречаются оба товара. Это совместные покупки, а не доказательство причинной связи.')
-        st.dataframe(companions(frame).head(20),hide_index=True,width='stretch')
+    sales_tab,buyers_tab=st.tabs(['Продажи и категории','Товары и покупатели'])
+    with sales_tab:
+        cats = st.multiselect('Категории',products.category.unique())
+        frame = selected[selected.category.isin(cats)] if cats else selected
+        kpis(frame)
+        graph(frame)
+        if not frame.empty:
+            category = frame.groupby('category',as_index=False).revenue.sum().rename(columns={'category':'Категория','revenue':'Оборот, ₽'})
+            st.plotly_chart(px.bar(category,x='Категория',y='Оборот, ₽',color_discrete_sequence=['#14946B']),width='stretch')
+            st.subheader('Популярные товары')
+            st.dataframe(frame.groupby('product',as_index=False)[['quantity','revenue','profit']].agg(lambda v: v.sum() if v.notna().all() else float('nan')).sort_values('revenue',ascending=False).rename(columns={'product':'Товар','quantity':'Количество','revenue':'Оборот, ₽','profit':'Валовая прибыль, ₽'}),hide_index=True,width='stretch')
+            st.subheader('Сопутствующие покупки')
+            st.caption('Число заказов, в которых встречаются оба товара. Это совместные покупки, а не доказательство причинной связи.')
+            st.dataframe(companions(frame).head(20),hide_index=True,width='stretch')
+    def open_product_buyer(cid):
+        open_client(cid)
+        st.session_state.page='Клиенты'
+    def refresh_price_catalog():
+        token=st.session_state.get('sync_token')
+        if not token:
+            st.error('Для прайс-листа подключите Мой Склад с сохранением токена на этом устройстве.')
+            return
+        try:
+            with st.spinner('Загрузка текущих товаров и цен…'): new_products=load_catalog(token)
+            new_data=(clients,new_products,lines)
+            st.session_state.live_data=new_data
+            st.session_state.pop('live_analytics',None)
+            cache=cache_for(token)
+            if cache is not None:
+                try: cache.save(new_data,st.session_state.sync_success_at)
+                except (StoreError,SnapshotError): st.session_state.sync_cache_error='Прайс обновлён, но серверный снимок не сохранён.'
+            if st.session_state.get('sync_origin')=='device': save_request(st.session_state,token,new_data,st.session_state.sync_success_at,st.session_state.get('sync_interval',30))
+            st.rerun()
+        except (MoySkladError,StoreError,SnapshotError): st.error('Не удалось обновить каталог. Прежние товары и история сохранены; попробуйте позже.')
+    with buyers_tab:
+        render_product_workspace(products,clients,lines,TODAY,start,end,open_product_buyer,refresh_price_catalog)
 elif page == 'AI-рекомендации':
     st.info('Работают правила Python без платного API. Объяснения основаны на вычислениях, предложения требуют проверки менеджером.')
     pr = st.multiselect('Приоритет рекомендаций',['Высокий','Средний'])
