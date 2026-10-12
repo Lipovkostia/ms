@@ -51,6 +51,14 @@ class InterfaceTests(unittest.TestCase):
         self.assertEqual(at.session_state['page'],'Карточка клиента')
         self.assertEqual(at.session_state['workspace_client'],cid)
 
+    def settle_refresh(self,at):
+        if 'live_refresh_job' in at.session_state:
+            from sales_center.moysklad import MoySkladError
+            try: at.session_state['live_refresh_job'].future.result(timeout=15)
+            except MoySkladError: pass
+        at.run()
+        self.assertFalse(at.exception)
+
     def test_all_sections(self):
         at=self.app()
         for page in next(r for r in at.radio if r.key=='page').options:
@@ -62,6 +70,7 @@ class InterfaceTests(unittest.TestCase):
         self.assertEqual(len(at.metric),0)
         with patch.dict('os.environ',{},clear=True):
             next(b for b in at.button if b.label=='Загрузить / обновить данные').click().run()
+            self.settle_refresh(at)
         self.assertTrue(at.error)
         self.assertFalse(at.exception)
     def test_search_and_saved_draft_task(self):
@@ -87,11 +96,13 @@ class InterfaceTests(unittest.TestCase):
             next(t for t in at.text_input if t.label=='API-токен Моего Склада').set_value('test-only')
             next(b for b in at.button if b.label=='Загрузить / обновить данные').click().run()
             self.assertFalse(at.exception)
+            self.settle_refresh(at)
             self.assertEqual(api.call_count,1)
             self.assertIn('live_analytics',at.session_state)
         from sales_center.moysklad import MoySkladError
         with patch('sales_center.sync.load_live',side_effect=MoySkladError('Ошибка тестового API')):
             next(b for b in at.button if b.label=='Загрузить / обновить данные').click().run()
+            self.settle_refresh(at)
         self.assertTrue(at.error)
         self.assertEqual(len(at.session_state['live_data'][0]),100)
         self.assertFalse(at.exception)
@@ -112,6 +123,7 @@ class InterfaceTests(unittest.TestCase):
         first=managed_app()
         with patch('sales_center.sync.load_live',return_value=fresh) as api:
             first.run();self.assertFalse(first.exception)
+            self.settle_refresh(first)
             self.assertEqual(api.call_count,1)
         second=managed_app()
         with patch('sales_center.sync.load_live') as api:
@@ -136,7 +148,9 @@ class InterfaceTests(unittest.TestCase):
         at.secrets.clear()
         at.secrets['MOYSKLAD_TOKEN']='persistent-test-key'
         at.secrets['MOYSKLAD_PRIVATE_DEPLOYMENT']=True
-        with patch('sales_center.sync.load_live',return_value=fresh): at.run()
+        with patch('sales_center.sync.load_live',return_value=fresh):
+            at.run()
+            self.settle_refresh(at)
         self.assertIn('live_data',at.session_state)
         at.secrets['MOYSKLAD_PRIVATE_DEPLOYMENT']=False
         with patch('sales_center.sync.load_live') as api:
@@ -155,6 +169,15 @@ class InterfaceTests(unittest.TestCase):
         next(b for b in at.button if b.key=='sync_settings').click().run()
         self.assertFalse(at.exception)
         self.assertEqual(at.session_state['page'],'Настройки')
+    def test_product_navigation_does_not_fetch_api_or_compute_hidden_charts(self):
+        at=self.app()
+        with patch('sales_center.sync.load_live') as api,patch('sales_center.price_catalog.load_catalog') as catalog,patch('sales_center.analytics.companions',side_effect=AssertionError('Hidden graphs must be lazy')):
+            next(r for r in at.radio if r.key=='page').set_value('Товарная аналитика').run()
+            self.assertFalse(at.exception)
+            next(t for t in at.text_input if t.key=='price_search').set_value('Хамон').run()
+            self.assertFalse(at.exception)
+            api.assert_not_called();catalog.assert_not_called()
+
     def test_product_design_shared_period_search_reset_and_selection(self):
         at=self.app()
         next(r for r in at.radio if r.key=='page').set_value('Товарная аналитика').run()

@@ -8,15 +8,16 @@ from sales_center.analytics import metrics, orders, client_summary, period, mont
 from sales_center.recommendations import generate, message
 from sales_center.storage import Store, StoreError
 from sales_center.moysklad import MoySkladError
-from sales_center.sync import refresh, due, restore
+from sales_center.sync import refresh, restore
+from sales_center.fast_sync import start as start_refresh, finish as finish_refresh, pending as refresh_pending, due
 from sales_center.connection_config import read_config
 from sales_center.snapshots import SnapshotCache, SnapshotError, source_id
 from sales_center.identity import identity
 from sales_center.theme import CSS
 from sales_center.presentation import safe, pill, stat, client_row, purchase_chart, category_chart
 from sales_center.settings import connections, model_picker
-from sales_center.browser_store import render_and_restore, save_request, forget_request
-from sales_center.product_design import render as render_product_workspace
+from sales_center.device_storage import render_and_restore, save_request, forget_request
+from sales_center.product_page import render as render_product_workspace
 from sales_center.price_catalog import load_catalog
 from sales_center.client_blocks_ui import render as render_client_blocks
 from sales_center.activity_api import load_client_activity
@@ -41,20 +42,34 @@ def cache_for(token):
         st.session_state.sync_cache_error='Хранилище снимков недоступно. Проверьте настройки базы. Ключ остаётся в защищённых настройках.'
         return None
 
+def complete_refresh():
+    changed=finish_refresh(st.session_state,user_id)
+    if st.session_state.pop('device_save_after_refresh',False):
+        try:
+            save_request(st.session_state,st.session_state.sync_token,st.session_state.live_data,st.session_state.sync_success_at,st.session_state.get('sync_interval',30))
+        except SnapshotError:
+            st.session_state.sync_device_saved=False
+            st.session_state.device_error='Данные обновлены. Снимок слишком велик для сохранения на устройстве; серверная копия продолжает работать.'
+    return changed
+
+complete_refresh()
+
 with st.container(key='device-store'):
+    device_before=st.session_state.get('_device_command')
     render_and_restore(st.session_state,user_id,TODAY)
+if device_before is not None and device_before is not st.session_state.get('_device_command'):
+    st.rerun()  # Flush a small idle acknowledgement before the next user action.
 if st.session_state.pop('device_needs_load',False) and not st.session_state.get('sync_disconnected'):
-    try:
-        with st.status('Восстановление подключения с этого устройства…',expanded=True) as status:
-            def device_report(stage,count,total): status.update(label=f'{stage}: {count:,} / {total:,}' if total else stage)
-            device_token=st.session_state.sync_token
-            fresh=refresh(st.session_state,TODAY,token=device_token,retain=True,progress=device_report,cache=cache_for(device_token))
-            st.session_state.sync_origin='device'
-            save_request(st.session_state,device_token,fresh,st.session_state.sync_success_at,st.session_state.get('sync_interval',30))
-            status.update(label='Подключение восстановлено',state='complete',expanded=False)
-        st.rerun()
-    except MoySkladError as exc: st.session_state.live_error=str(exc)
-    except (KeyError,TypeError,ValueError): st.session_state.live_error='Не удалось восстановить данные. Ключ сохранён: попробуйте обновление позже.'
+    device_token=st.session_state.sync_token
+    cache=cache_for(device_token)
+    recovered=False
+    if cache is not None:
+        try: recovered=restore(st.session_state,TODAY,cache)
+        except (StoreError,SnapshotError): pass
+    if recovered:
+        save_request(st.session_state,device_token,st.session_state.live_data,st.session_state.sync_success_at,st.session_state.get('sync_interval',30))
+    elif 'live_data' not in st.session_state:
+        start_refresh(st.session_state,TODAY,device_token,user_id,cache=cache,origin='device',remember=True)
 
 # Removing access or a configured key must also clear a previously managed session.
 if st.session_state.get('sync_origin')=='managed' and not (config.token and config.authorized):
@@ -80,13 +95,8 @@ if config.automatic and not st.session_state.get('sync_disconnected') and st.ses
             try: restored=restore(st.session_state,TODAY,cache)
             except (StoreError,SnapshotError): st.session_state.sync_cache_error='Сохранённый снимок недоступен. Выполняется новая загрузка.'
         if not restored and 'live_data' not in st.session_state:
-            try:
-                with st.status('Автоподключение к Моему Складу · сохранённый токен',expanded=True) as status:
-                    def bootstrap_report(stage,count,total): status.update(label=f'{stage}: {count:,} / {total:,}' if total else stage)
-                    refresh(st.session_state,TODAY,token=config.token,progress=bootstrap_report,retain=True,cache=cache)
-                    status.update(label='Подключение восстановлено',state='complete',expanded=False)
-            except MoySkladError as exc: st.session_state.live_error=str(exc)
-            except (KeyError,TypeError,ValueError): st.session_state.live_error='Не удалось обработать данные. Повторите обновление; сохранённый токен вводить заново не нужно.'
+            start_refresh(st.session_state,TODAY,config.token,user_id,cache=cache,origin='managed',remember=False)
+
 
 def navigate(page_name):
     st.session_state.page=page_name
@@ -105,12 +115,14 @@ with st.sidebar:
     else:
         if st.button('Выйти'): st.logout()
 
-@st.fragment(run_every='60s')
+@st.fragment(run_every='2s')
 def sync_panel():
+    if complete_refresh(): st.rerun()
     if 'sync_interval' not in st.session_state: st.session_state.sync_interval=30
     interval=st.session_state.get('sync_interval',30)
-    auto=due(st.session_state,interval)
+    auto=due(st.session_state,interval) and not refresh_pending(st.session_state)
     panel_label='↻ Подключение и обновление' if page=='Настройки' else '↻ Синхронизировать с Мой Склад' if 'live_data' in st.session_state else '↻ Подключить Мой Склад'
+    if refresh_pending(st.session_state): panel_label='↻ Обновление в фоне'
     popover_options={'key':'moysklad_panel','on_change':'rerun'} if 'on_change' in inspect.signature(st.popover).parameters else {}
     with st.popover(panel_label,width='stretch',**popover_options):
         if st.session_state.get('sync_device_saved'):
@@ -138,9 +150,9 @@ def sync_panel():
             remember=st.checkbox('Запомнить подключение на этом устройстве',value=True)
             retain=True
             requested=st.form_submit_button('Загрузить / обновить данные',disabled=checking_device)
-        quick=st.button('Обновить сейчас',type='primary',disabled=not st.session_state.get('sync_token'),help='Для обновления сначала загрузите данные с сохранением токена в сессии или настройте постоянное подключение')
+        quick=st.button('Обновить сейчас',type='primary',disabled=refresh_pending(st.session_state) or not st.session_state.get('sync_token'),help='Для обновления сначала загрузите данные с сохранением токена в сессии или настройте постоянное подключение')
         interval=st.selectbox('Период обновления (минут)',[0,15,30,60],format_func=lambda n:'Только вручную' if n==0 else f'Каждые {n} минут',key='sync_interval')
-        st.caption('При открытии сначала восстанавливается сохранённый снимок. Обновление из Моего Склада работает при открытой вкладке; таймер проверяется раз в минуту. Первичная загрузка при отсутствии снимка может занять несколько минут. Это не поток в реальном времени.')
+        st.caption('При открытии сначала восстанавливается сохранённый снимок. Обновление из Моего Склада работает при открытой вкладке; таймер проверяется каждые 2 секунды. Обновление идёт в фоне и не блокирует сохранённую базу. Первичная загрузка при отсутствии снимка может занять несколько минут. Это не поток в реальном времени.')
         if interval and not st.session_state.get('sync_token') and not (requested and retain): st.info('Для автообновления сначала подключите Мой Склад. Токен останется в памяти текущей сессии, а флажок «Запомнить подключение» сохранит его на устройстве.')
         if requested or quick or auto:
             try:
@@ -158,21 +170,15 @@ def sync_panel():
                                 save_request(st.session_state,selected_token,st.session_state.live_data,st.session_state.sync_success_at,st.session_state.get('sync_interval',30))
                             st.rerun()
                     except (StoreError,SnapshotError): pass
-                with st.status('Подключение…',expanded=True) as status:
-                    def report(stage,count,total): status.update(label=f'{stage}: {count:,} / {total:,}' if total else stage)
-                    fresh=refresh(st.session_state,pd.Timestamp.now(tz='Europe/Moscow').date(),token=selected_token,progress=report,retain=retain if requested and token.strip() else True,cache=cache)
-                    st.session_state.sync_disconnected=False
-                    previous_origin=st.session_state.get('sync_origin')
-                    keep_device=remember if requested else previous_origin=='device'
-                    if requested and not remember: st.session_state.sync_device_saved=False
-                    st.session_state.sync_origin='device' if keep_device else 'managed' if selected_token==config.token else 'manual'
-                    if keep_device:
-                        save_request(st.session_state,selected_token,fresh,st.session_state.sync_success_at,st.session_state.get('sync_interval',30))
-                    status.update(label='Данные проверены и загружены',state='complete',expanded=False)
-                st.success(f'Подключение выполнено: {len(fresh[0]):,} клиентов, {fresh[2].order_id.nunique():,} отгрузок.')
-                st.rerun()
+                previous_origin=st.session_state.get('sync_origin')
+                keep_device=remember if requested else previous_origin=='device'
+                origin='device' if keep_device else 'managed' if selected_token==config.token else 'manual'
+                start_refresh(st.session_state,pd.Timestamp.now(tz='Europe/Moscow').date(),selected_token,user_id,cache=cache,origin=origin,remember=keep_device)
+                if complete_refresh(): st.rerun()
             except MoySkladError as exc: st.session_state.live_error=str(exc)
             except (KeyError,TypeError,ValueError) as exc: st.session_state.live_error=f'Ошибка обработки данных ({type(exc).__name__}). Прежние данные сохранены. Сообщите этот код администратору.'
+        if refresh_pending(st.session_state):
+            st.info(st.session_state.live_refresh_job.progress.text()+' · сохранённая база доступна во время обновления')
         if st.session_state.get('live_error'): st.error(st.session_state.live_error)
         if st.session_state.get('sync_cache_error') and not st.session_state.get('sync_device_saved'): st.warning(st.session_state.sync_cache_error)
         if st.session_state.get('device_pending'): st.caption('Сохраняем подключение на устройстве…')
@@ -218,7 +224,11 @@ source='Мой Склад'
 if page=='Настройки':
     connections()
     st.stop()
+if 'live_data' not in st.session_state and refresh_pending(st.session_state):
+    st.info('Первичная загрузка запущена в фоне. Интерфейс доступен; данные появятся автоматически после проверки.')
+    st.stop()
 if 'live_data' not in st.session_state:
+    if st.session_state.get('live_error'): st.error(st.session_state.live_error)
     st.markdown('<div class="empty-hero"><span class="pill">Ваш центр управления продажами</span><h2>Клиенты, аналитика и следующий шаг —<br>в одном рабочем пространстве</h2><p>Подключите Мой Склад, чтобы увидеть свою клиентскую базу, историю покупок и возможности для следующего контакта.</p><p>Нажмите «Подключить Мой Склад» в верхней панели и вставьте токен. Первичная загрузка годовой истории может занять несколько минут.</p></div>',unsafe_allow_html=True)
     st.info('Подключите Мой Склад в панели выше. Здесь отображаются только реальные данные вашего аккаунта. Настройки мессенджеров и AI доступны до загрузки.')
     st.stop()
@@ -240,7 +250,8 @@ except (OSError,ValueError):
     st.error('База записей недоступна. Проверьте DATABASE_URL или права записи в .runtime. Секрет подключения не выводится.')
     st.stop()
 if 'live_analytics' not in st.session_state:
-    st.session_state.live_analytics=(client_summary(clients,lines,TODAY),generate(client_summary(clients,lines,TODAY),lines,products,TODAY))
+    calculated=client_summary(clients,lines,TODAY)
+    st.session_state.live_analytics=(calculated,generate(calculated,lines,products,TODAY))
 summary,recommendations=st.session_state.live_analytics
 with st.sidebar:
     with st.expander('Источник и хранение'):
@@ -369,20 +380,7 @@ elif page in ['Клиенты','Карточка клиента']:
             if not token:
                 st.session_state.moysklad_panel=True
                 return
-            try:
-                if 'crm_history_loaded' not in st.session_state.live_data[0]:
-                    frames=st.session_state.live_data
-                    updated=load_client_activity(token,frames[0],TODAY)
-                    from sales_center.sync import assign
-                    import time
-                    assign(st.session_state,(updated,frames[1],frames[2]),TODAY,time.time())
-                    cache_for(token).save(st.session_state.live_data,st.session_state.sync_success_at)
-                else:
-                    refresh(st.session_state,TODAY,token,retain=True,cache=cache_for(token))
-                if st.session_state.get('sync_origin')=='device':
-                    save_request(st.session_state,token,st.session_state.live_data,st.session_state.sync_success_at,st.session_state.get('sync_interval',30))
-            except (MoySkladError,StoreError,SnapshotError) as exc:
-                st.session_state.live_error=str(exc)
+            start_refresh(st.session_state,TODAY,token,user_id,cache=cache_for(token))
         render_client_blocks(clients,TODAY,store,open_block_client,refresh_client_blocks)
     active_count=int((summary.order_count>0).sum())
     delayed_count=int((summary.cycle_ratio>1.5).sum())
@@ -531,8 +529,8 @@ elif page == 'Возврат клиентов':
     st.caption('Клиенты с недостаточной историей не классифицируются как потерянные. Задержка — сигнал для разговора, а не подтверждение потери клиента.')
     recommendation_cards(recommendations[recommendations.kind == 'return'])
 elif page == 'Товарная аналитика':
-    buyers_tab,sales_tab=st.tabs(['Товары и покупатели','Продажи и категории'])
-    with sales_tab:
+    product_view=st.segmented_control('Представление аналитики',['Товары и покупатели','Продажи и категории'],default='Товары и покупатели',required=True,key='product_view',label_visibility='collapsed')
+    if product_view=='Продажи и категории':
         cats = st.multiselect('Категории',products.category.unique())
         frame = selected[selected.category.isin(cats)] if cats else selected
         kpis(frame)
@@ -553,19 +551,8 @@ elif page == 'Товарная аналитика':
         if not token:
             st.error('Для прайс-листа подключите Мой Склад с сохранением токена на этом устройстве.')
             return
-        try:
-            with st.spinner('Загрузка текущих товаров и цен…'): new_products=load_catalog(token)
-            new_data=(clients,new_products,lines)
-            st.session_state.live_data=new_data
-            st.session_state.pop('live_analytics',None)
-            cache=cache_for(token)
-            if cache is not None:
-                try: cache.save(new_data,st.session_state.sync_success_at)
-                except (StoreError,SnapshotError): st.session_state.sync_cache_error='Прайс обновлён, но серверный снимок не сохранён.'
-            if st.session_state.get('sync_origin')=='device': save_request(st.session_state,token,new_data,st.session_state.sync_success_at,st.session_state.get('sync_interval',30))
-            st.rerun()
-        except (MoySkladError,StoreError,SnapshotError): st.error('Не удалось обновить каталог. Прежние товары и история сохранены; попробуйте позже.')
-    with buyers_tab:
+        start_refresh(st.session_state,TODAY,token,user_id,cache=cache_for(token),kind='catalog')
+    if product_view=='Товары и покупатели':
         render_product_workspace(products,clients,lines,TODAY,start,end,open_product_buyer,refresh_price_catalog)
 elif page == 'AI-рекомендации':
     st.info('Работают правила Python без платного API. Объяснения основаны на вычислениях, предложения требуют проверки менеджером.')

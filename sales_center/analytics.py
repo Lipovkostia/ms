@@ -4,7 +4,12 @@ import pandas as pd
 def orders(lines):
     if lines.empty:
         return lines[['order_id', 'client_id', 'date', 'revenue', 'cost', 'profit']].copy()
-    return lines.groupby(['order_id', 'client_id', 'date'], as_index=False)[['revenue', 'cost', 'profit']].agg(lambda v: v.sum() if v.notna().all() else float('nan'))
+    amounts = ['revenue', 'cost', 'profit']
+    grouped = lines.groupby(['order_id', 'client_id', 'date'])
+    # Unknown cost/profit on one line makes the whole order unknown. Native
+    # reductions preserve that rule without invoking Python for every order.
+    complete = grouped[amounts].count().eq(grouped.size(), axis='index')
+    return grouped[amounts].sum(min_count=1).where(complete).reset_index()
 
 def metrics(lines):
     revenue = float(lines.revenue.sum())
@@ -17,26 +22,30 @@ def metrics(lines):
 
 def client_summary(clients, lines, today):
     today = pd.Timestamp(today).normalize()
-    all_orders = orders(lines)
-    rows = []
-    grouped = {cid: frame.sort_values('date') for cid,frame in all_orders.groupby('client_id')}
-    empty_orders = all_orders.iloc[:0]
-    for c in clients.itertuples():
-        o = grouped.get(c.client_id, empty_orders)
-        gaps = o.date.diff().dt.days.dropna()
-        # Robust median avoids a single missed order redefining the normal cycle.
-        cycle = float(gaps.median()) if len(gaps) >= 2 else None
-        mean_gap = float(gaps.mean()) if len(gaps) else None
-        last = o.date.max() if len(o) else pd.NaT
-        days = int((today-last).days) if len(o) else None
-        ratio = days/cycle if cycle and days is not None else None
-        priority = 'Высокий' if ratio is not None and ratio > 1.5 else 'Средний' if ratio is not None and ratio > 1.1 else 'Низкий'
-        age = max(1, (today-o.date.min()).days) if len(o) else 1
-        rows.append(dict(client_id=c.client_id, company=c.company, segment=c.segment, city=c.city,
-                         revenue=float(o.revenue.sum()), average=float(o.revenue.mean()) if len(o) else 0,
-                         order_count=len(o), last_order=last, days_since=days, cycle=cycle,
-                         mean_gap=mean_gap, cycle_ratio=ratio, frequency=len(o)*30/age, priority=priority))
-    return pd.DataFrame(rows)
+    all_orders = orders(lines).sort_values(['client_id', 'date'])
+    all_orders['gap'] = all_orders.groupby('client_id').date.diff().dt.days
+    totals = all_orders.groupby('client_id').agg(
+        revenue=('revenue', 'sum'), average=('revenue', 'mean'),
+        order_count=('order_id', 'size'), last_order=('date', 'max'),
+        first_order=('date', 'min'), cycle=('gap', 'median'),
+        gap_count=('gap', 'count'), mean_gap=('gap', 'mean'))
+    # Robust median needs at least two intervals, as in the original formula.
+    totals['cycle'] = totals.cycle.where(totals.gap_count >= 2)
+    result = clients[['client_id', 'company', 'segment', 'city']].merge(
+        totals, left_on='client_id', right_index=True, how='left', sort=False)
+    result['average'] = result.average.where(result.order_count.notna(), 0)
+    result[['revenue', 'order_count']] = result[['revenue', 'order_count']].fillna(0)
+    result['order_count'] = result.order_count.astype('int64')
+    result['days_since'] = (today-result.last_order).dt.days
+    result['cycle_ratio'] = result.days_since/result.cycle.where(result.cycle != 0)
+    result['frequency'] = result.order_count*30/(today-result.first_order).dt.days.clip(lower=1)
+    result['frequency'] = result.frequency.fillna(0)
+    result['priority'] = 'Низкий'
+    result.loc[result.cycle_ratio > 1.1, 'priority'] = 'Средний'
+    result.loc[result.cycle_ratio > 1.5, 'priority'] = 'Высокий'
+    return result[['client_id', 'company', 'segment', 'city', 'revenue', 'average',
+                   'order_count', 'last_order', 'days_since', 'cycle', 'mean_gap',
+                   'cycle_ratio', 'frequency', 'priority']].reset_index(drop=True)
 
 def period(lines, start, end):
     return lines[(lines.date >= pd.Timestamp(start)) & (lines.date < pd.Timestamp(end)+pd.Timedelta(days=1))]

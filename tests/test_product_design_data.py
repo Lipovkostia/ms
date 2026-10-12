@@ -5,8 +5,10 @@ import unittest
 import pandas as pd
 
 from sales_center.product_analytics import buyers
+from sales_center.product_page_cache import ProductPageCache,buyer_options
 from sales_center.product_design_data import (
-    catalog_view, export_catalog_csv, filter_sales, period_window, warehouse_options,
+    catalog_view, export_catalog_csv, filter_sales,
+    period_window, warehouse_options,
 )
 
 
@@ -130,6 +132,49 @@ class ProductDesignDataTests(unittest.TestCase):
         result.loc[0, 'product'] = '=DANGEROUS()'
         exported = pd.read_csv(BytesIO(export_catalog_csv(result)))
         self.assertEqual(exported.iloc[0]['Товар'], "'=DANGEROUS()")
+
+    def test_session_results_reuse_same_snapshot_but_follow_changed_filters(self):
+        cache = ProductPageCache(self.products, self.clients, self.lines, self.today, ('account', 1))
+        first_sales = cache.sales('30')
+        first_view, first_export = cache.catalog('wholesale', only_sales=True)
+        first_buyers = cache.product_buyers(self.pid)
+        self.assertIs(cache.sales('30')[2], first_sales[2])
+        self.assertIs(cache.catalog('wholesale', only_sales=True)[0], first_view)
+        self.assertIs(cache.catalog('wholesale', only_sales=True)[1], first_export)
+        self.assertIs(cache.product_buyers(self.pid), first_buyers)
+        # A new buyer filter must replace the old financial and selected-product totals.
+        cache.sales('30', buyer_id=11)
+        next_view, next_export = cache.catalog('wholesale', only_sales=True)
+        self.assertEqual(next_view.sold_revenue.sum(), 300)
+        self.assertEqual(cache.product_buyers(self.pid).client_id.tolist(), [11])
+        self.assertIsNot(next_view, first_view)
+        self.assertIsNot(next_export, first_export)
+        self.assertTrue(cache.catalog('wholesale', query='not found')[0].empty)
+
+    def test_session_cache_matches_only_same_source_snapshot_date_and_revision(self):
+        cache = ProductPageCache(self.products, self.clients, self.lines, self.today, ('account', 1))
+        self.assertTrue(cache.matches(self.products, self.clients, self.lines, self.today, ('account', 1)))
+        self.assertFalse(cache.matches(self.products.copy(), self.clients, self.lines, self.today, ('account', 1)))
+        self.assertFalse(cache.matches(self.products, self.clients, self.lines, self.today, ('account', 2)))
+        self.assertFalse(cache.matches(self.products, self.clients, self.lines, date(2026, 10, 13), ('account', 1)))
+        # A second employee/account can contain the same IDs with different labels.
+        other_clients = self.clients.copy()
+        other_clients.loc[0, 'company'] = 'Другой аккаунт'
+        other = ProductPageCache(self.products, other_clients, self.lines, self.today, ('other', 1))
+        self.assertEqual(cache.buyer_names[10], 'Покупатель А')
+        self.assertEqual(other.buyer_names[10], 'Другой аккаунт')
+
+    def test_bounded_buyer_options_keep_large_ids_searchable_and_selected(self):
+        names = {self.pid + i: f'Компания {i:04}' for i in range(6320)}
+        selected = self.pid + 6319
+        options, total = buyer_options(names, selected=selected)
+        self.assertEqual(total, 6320)
+        self.assertLessEqual(len(options), 202)  # All buyers + 200 rows + selection.
+        self.assertIn(selected, options)
+        searched, total = buyer_options(names, 'КОМПАНИЯ 6319')
+        self.assertEqual(searched, [None, selected])
+        self.assertEqual(total, 1)
+        self.assertEqual(buyer_options(names, 'missing'), ([None], 0))
 
 
 if __name__ == '__main__':

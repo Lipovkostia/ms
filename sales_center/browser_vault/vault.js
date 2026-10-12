@@ -40,9 +40,21 @@ async function write(owner,value,remove=false) {
     });
   } finally {db.close();}
 }
+async function transportSnapshot(text) {
+  if (typeof text!=='string' || text.length<1024*1024 || typeof CompressionStream==='undefined') return text;
+  try {
+    // Compress the signed STRING, never parse large numeric IDs in JavaScript.
+    const stream=new Blob([text]).stream().pipeThrough(new CompressionStream('deflate'));
+    const bytes=new Uint8Array(await new Response(stream).arrayBuffer());
+    let binary='';
+    for(let offset=0;offset<bytes.length;offset+=8192) binary+=String.fromCharCode(...bytes.subarray(offset,offset+8192));
+    return JSON.stringify({transport:'zlib-base64',data:btoa(binary)});
+  } catch (_) {return text;}
+}
 async function handle(args) {
   const base={request_id:args.request_id,owner:args.owner};
   try {
+    if (args.operation==='idle') {send({...base,status:'idle'});return;}
     if (!window.isSecureContext || !crypto.subtle || !indexedDB) throw new Error('unavailable');
     if (args.operation==='forget') {
       await write(args.owner,null,true);
@@ -56,7 +68,7 @@ async function handle(args) {
       const bytes=await crypto.subtle.decrypt({name:'AES-GCM',iv:previous.iv,additionalData:encoder.encode(DB_NAME+':'+args.owner)},previous.key,previous.cipher);
       const payload=JSON.parse(decoder.decode(bytes));
       if (typeof payload.token!=='string' || !payload.token || payload.owner!==args.owner) throw new Error('invalid');
-      send({...base,status:'restored',token:payload.token,snapshot_json:payload.snapshot_json||'',interval:payload.interval});
+      send({...base,status:'restored',token:payload.token,snapshot_json:await transportSnapshot(payload.snapshot_json||''),interval:payload.interval});
       return;
     }
     if (args.operation==='save') {
@@ -77,7 +89,7 @@ async function handle(args) {
 window.addEventListener('message',event=>{
   if (window.parent===window || event.source!==window.parent || event.origin!==window.location.origin || !event.data || event.data.type!=='streamlit:render') return;
   const args=event.data.args||{};
-  if (!args.owner || !args.request_id || !['load','save','forget'].includes(args.operation)) return;
+  if (!args.owner || !args.request_id || !['load','save','forget','idle'].includes(args.operation)) return;
   const request=args.owner+':'+args.request_id+':'+args.operation;
   if (lastRequest===request) return;
   lastRequest=request;
