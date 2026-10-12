@@ -155,6 +155,28 @@ class InterfaceTests(unittest.TestCase):
         next(b for b in at.button if b.key=='sync_settings').click().run()
         self.assertFalse(at.exception)
         self.assertEqual(at.session_state['page'],'Настройки')
+    def test_product_design_shared_period_search_reset_and_selection(self):
+        at=self.app()
+        next(r for r in at.radio if r.key=='page').set_value('Товарная аналитика').run()
+        self.assertFalse(at.exception)
+        next(r for r in at.radio if r.key=='pd_period').set_value('30').run()
+        self.assertFalse(at.exception)
+        self.assertEqual(at.session_state['pd_period_quick'],'30')
+        selected=at.session_state['price_product_id']
+        next(t for t in at.text_input if t.key=='price_search').set_value('неттакоготовара').run()
+        self.assertFalse(at.exception)
+        self.assertTrue(any('Нет товаров' in i.value for i in at.info))
+        next(b for b in at.button if b.key=='pd_reset').click().run()
+        self.assertFalse(at.exception)
+        self.assertEqual(at.session_state['pd_period'],'12m')
+        self.assertEqual(at.session_state['price_search'],'')
+        selector=next(v for v in at.selectbox if v.key=='pd_product_selector')
+        other=next(pid for pid in at.session_state['live_data'][1].product_id if pid!=at.session_state['price_product_id'])
+        selector.set_value(int(other)).run()
+        self.assertFalse(at.exception)
+        self.assertEqual(at.session_state['price_product_id'],other)
+        self.assertEqual(at.session_state['pd_period'],'12m')
+
     def test_price_list_buyer_opens_correct_client_and_clears_filters(self):
         at=self.app()
         next(r for r in at.radio if r.key=='page').set_value('Товарная аналитика').run()

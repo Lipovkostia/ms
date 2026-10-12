@@ -95,4 +95,92 @@ h1{font-size:25px!important;letter-spacing:-.025em}h2{font-size:20px!important}h
 .st-key-product-workspace .stButton>button{text-align:left;white-space:normal;justify-content:flex-start;min-height:44px}
 @media(max-width:1099px){.st-key-product-workspace>[data-testid="stLayoutWrapper"]>[data-testid="stHorizontalBlock"]{flex-wrap:wrap}.st-key-product-workspace>[data-testid="stLayoutWrapper"]>[data-testid="stHorizontalBlock"]>[data-testid="stColumn"]{flex:1 1 100%!important;min-width:100%!important}}
 @media(max-width:640px){.st-key-crm-blocks [data-testid="stHorizontalBlock"]{flex-wrap:wrap}.st-key-crm-blocks [data-testid="stColumn"]{flex:1 1 100%!important;min-width:100%!important}}
+
+/* Product analytics: the quiet two-panel workspace supplied by the user.
+   Keyed containers keep these styles out of the other CRM sections. */
+.stApp:has(.st-key-product-design-page){background:#f5f7f9;color:#1e2d3d}
+.stApp:has(.st-key-product-design-page) [data-testid="stSidebar"]{background:#142b3f;min-width:232px;max-width:232px}
+.stApp:has(.st-key-product-design-page) .brand-title{font-size:14px}
+@media(max-width:1150px){.stApp:has(.st-key-product-design-page) [data-testid="stSidebar"]{min-width:205px;max-width:205px}}
+.st-key-product-design-page{--pd-text:#1e2d3d;--pd-muted:#728295;--pd-line:#e3eaf0;--pd-accent:#078b76;--pd-selected:#e8f5f2;min-width:0;color:var(--pd-text)}
+.st-key-product-design-page>[data-testid="stVerticalBlock"],.st-key-product-design-page{gap:12px}
+.st-key-product-design-page [data-testid="stColumn"],.st-key-product-design-page [data-testid="stLayoutWrapper"]{min-width:0}
+.st-key-product-design-page [data-testid="stMarkdownContainer"] p{font-size:13px;line-height:1.55;color:var(--pd-text)}
+.st-key-product-design-page [data-testid="stCaptionContainer"]{font-size:12px;line-height:1.5;color:var(--pd-muted)}
+.st-key-product-design-page [data-testid="stCaptionContainer"] p{font-size:12px!important;line-height:1.45;color:var(--pd-muted)!important;margin:0}
+.st-key-product-design-page h1,.st-key-product-design-page .pd-title{font-size:24px!important;font-weight:700;line-height:1.25;letter-spacing:-.035em;color:var(--pd-text);margin:0;padding:0}
+.st-key-product-design-page h2,.st-key-product-design-page h3,.st-key-product-design-page .st-key-product-design-panel-title{font-size:14px!important;line-height:1.4;letter-spacing:0;color:var(--pd-text);font-weight:700;padding:0;margin:0}
+.st-key-product-design-heading{padding:8px 0 0;gap:6px}
+.st-key-product-design-header>[data-testid="stHorizontalBlock"],.st-key-product-design-header>[data-testid="stLayoutWrapper"]>[data-testid="stHorizontalBlock"]{gap:20px;align-items:flex-end}
+.st-key-product-design-header [data-testid="stColumn"]{min-width:0!important}
+.st-key-product-design-page .pd-eyebrow{font-size:11px;line-height:1.5;font-weight:700;letter-spacing:.045em;text-transform:uppercase;color:var(--pd-accent);margin-bottom:4px}
+.st-key-product-design-page .pd-subtitle{font-size:13px;line-height:1.5;color:var(--pd-muted);margin:5px 0 0}
+.st-key-product-design-page .pd-selected-label{font-size:10px;line-height:1.5;text-transform:uppercase;letter-spacing:.07em;color:var(--pd-muted);font-weight:700;overflow-wrap:anywhere}
+.st-key-product-design-page .pd-product-title{font-size:17px;line-height:1.4;font-weight:650;letter-spacing:-.015em;color:var(--pd-text);margin:5px 0;overflow-wrap:anywhere}
+.st-key-product-design-page .pd-product-meta{font-size:12px;line-height:1.5;color:var(--pd-muted);overflow-wrap:anywhere}
+.st-key-product-design-page .pd-chip{display:inline-flex;align-items:center;gap:5px;background:#fff;border:1px solid var(--pd-line);border-radius:7px;color:#4a6074;font-size:12px;line-height:1.4;padding:5px 9px;max-width:100%;overflow-wrap:anywhere}
+.st-key-product-design-page .pd-chip.selected{background:var(--pd-selected);border-color:#9ccfc5;color:#087b69;font-weight:650}
+.st-key-product-design-controls>[data-testid="stHorizontalBlock"],.st-key-product-design-controls>[data-testid="stLayoutWrapper"]>[data-testid="stHorizontalBlock"]{gap:12px;align-items:flex-end}
+.st-key-product-design-controls [data-testid="stColumn"]{min-width:0!important}
+.st-key-product-design-filters{background:#fff;border:1px solid var(--pd-line);border-radius:12px;padding:12px 14px;box-shadow:0 2px 10px #1c32440b}
+.st-key-product-design-filters>[data-testid="stHorizontalBlock"],.st-key-product-design-filters>[data-testid="stLayoutWrapper"]>[data-testid="stHorizontalBlock"]{gap:10px;align-items:center;flex-wrap:wrap}
+.st-key-product-design-filters>[data-testid="stHorizontalBlock"]>[data-testid="stColumn"],.st-key-product-design-filters>[data-testid="stLayoutWrapper"]>[data-testid="stHorizontalBlock"]>[data-testid="stColumn"]{flex:1 1 150px!important;min-width:150px!important}
+.st-key-product-design-workspace>[data-testid="stHorizontalBlock"],.st-key-product-design-workspace>[data-testid="stLayoutWrapper"]>[data-testid="stHorizontalBlock"]{gap:16px;align-items:flex-start}
+.st-key-product-design-workspace>[data-testid="stHorizontalBlock"]>[data-testid="stColumn"],.st-key-product-design-workspace>[data-testid="stLayoutWrapper"]>[data-testid="stHorizontalBlock"]>[data-testid="stColumn"]{flex:1 1 0!important;min-width:0!important}
+.st-key-product-design-catalog,.st-key-product-design-details{background:#fff;border:1px solid var(--pd-line);border-radius:12px;padding:16px;box-shadow:0 2px 10px #1c32440b;min-width:0;gap:12px}
+.st-key-product-design-page [data-testid="stTextInputRootElement"],.st-key-product-design-page [data-testid="stTextAreaRootElement"]{background:#fff!important;border:1px solid var(--pd-line)!important;border-radius:8px!important}
+.st-key-product-design-page [data-baseweb="select"]>div{background:#fff!important;border:1px solid var(--pd-line)!important;border-radius:8px!important}
+.st-key-product-design-page [data-testid="stTextInput"] input,.st-key-product-design-page [data-testid="stTextArea"] textarea,.st-key-product-design-page [data-testid="stSelectbox"] input{font-size:13px;color:var(--pd-text)}
+.st-key-product-design-page [data-testid="stWidgetLabel"] p{font-size:12px;line-height:1.4;color:#52677a}
+.st-key-product-design-page [data-testid="stCheckbox"] label{min-height:36px;align-items:center}
+.st-key-product-design-page [data-testid="stCheckbox"] label p{font-size:12px}
+.st-key-product-design-page [data-testid="stButton"] button,.st-key-product-design-page [data-testid="stDownloadButton"] button,.st-key-product-design-page [data-testid="stPopover"] button,.st-key-product-design-page [data-testid="stFormSubmitButton"] button{font-size:12px;min-height:36px;border:1px solid var(--pd-line);border-radius:8px;color:#42586c;background:#fff;box-shadow:none;white-space:normal;line-height:1.4;padding:7px 12px}
+.st-key-product-design-page [data-testid="stButton"] button:hover,.st-key-product-design-page [data-testid="stDownloadButton"] button:hover,.st-key-product-design-page [data-testid="stPopover"] button:hover{border-color:#9ccfc5;background:#f3f9f7;color:#087b69}
+.st-key-product-design-page [data-testid="stButton"] button[kind="primary"],.st-key-product-design-page [data-testid="stFormSubmitButton"] button[kind="primary"]{border-color:var(--pd-accent);background:var(--pd-accent);color:#fff}
+.st-key-product-design-page [data-testid="stButton"] button[kind="primary"]:hover{background:#077763;border-color:#077763;color:#fff}
+.st-key-product-design-page button:focus-visible,.st-key-product-design-page a:focus-visible{outline:2px solid var(--pd-accent);outline-offset:3px}
+.st-key-product-design-page [data-testid="stTextInputRootElement"]:focus-within,.st-key-product-design-page [data-baseweb="select"]:focus-within>div{outline:2px solid #078b7673;outline-offset:2px}
+.st-key-product-design-page button:disabled{color:#7a8996!important;background:#f6f8fa!important;border-color:var(--pd-line)!important;cursor:not-allowed;opacity:1}
+.st-key-product-design-period [data-testid="stButtonGroup"]>div{gap:6px;flex-wrap:wrap}
+.st-key-product-design-period [data-testid="stButtonGroup"] button{font-size:12px;min-height:32px;padding:6px 9px;border:1px solid var(--pd-line);border-radius:7px;color:#52677a;background:#fff;line-height:1.4}
+.st-key-product-design-period [data-testid="stButtonGroup"] button[aria-pressed="true"]{background:var(--pd-selected);border-color:#9ccfc5;color:#087b69;font-weight:650}
+.st-key-product-design-period [data-testid="stButtonGroup"] button:hover{border-color:#9ccfc5;background:#f3f9f7}
+.st-key-product-design-metrics>[data-testid="stHorizontalBlock"],.st-key-product-design-metrics>[data-testid="stLayoutWrapper"]>[data-testid="stHorizontalBlock"]{gap:9px;flex-wrap:nowrap}
+.st-key-product-design-metrics>[data-testid="stHorizontalBlock"]>[data-testid="stColumn"],.st-key-product-design-metrics>[data-testid="stLayoutWrapper"]>[data-testid="stHorizontalBlock"]>[data-testid="stColumn"]{flex:1 1 0!important;min-width:0!important;width:calc((100% - 18px)/3)!important;max-width:calc((100% - 18px)/3)!important}
+.st-key-product-design-metrics [data-testid="stMetric"]{padding:11px;border:1px solid var(--pd-line);border-radius:9px;background:#fff;min-width:0;box-shadow:none}
+.st-key-product-design-metrics [data-testid="stMetricLabel"]{font-size:11px;color:var(--pd-muted)}
+.st-key-product-design-metrics [data-testid="stMetricLabel"] p{font-size:11px!important;line-height:1.4;color:var(--pd-muted)}
+.st-key-product-design-metrics [data-testid="stMetricValue"]{font-size:20px!important;color:var(--pd-text);font-weight:700;letter-spacing:-.025em;font-variant-numeric:tabular-nums;white-space:normal;overflow-wrap:anywhere}
+.st-key-product-design-metrics [data-testid="stMetricValue"] [data-testid="stMarkdownContainer"] p{font-size:20px!important;line-height:1.35;color:var(--pd-text);font-weight:700;font-variant-numeric:tabular-nums;white-space:normal;overflow-wrap:anywhere}
+.st-key-product-design-page [data-testid="stDataFrame"]{max-width:100%;min-width:0;border:1px solid var(--pd-line);border-radius:8px;overflow:auto;font-size:12px;font-variant-numeric:tabular-nums}
+.st-key-product-design-hint,.st-key-product-design-page .pd-hint{border-radius:9px;padding:12px 14px;background:#f0f6f7;border:1px solid #e3ecec;color:#536c78;font-size:12px;line-height:1.55;overflow-wrap:anywhere}
+.st-key-product-design-hint [data-testid="stMarkdownContainer"] p{color:#536c78;font-size:12px;margin:0}
+.st-key-product-design-hint b,.st-key-product-design-page .pd-hint b{color:#207d71}
+@media(max-width:1249px){
+ .st-key-product-design-workspace>[data-testid="stHorizontalBlock"],.st-key-product-design-workspace>[data-testid="stLayoutWrapper"]>[data-testid="stHorizontalBlock"]{flex-wrap:wrap}
+ .st-key-product-design-workspace>[data-testid="stHorizontalBlock"]>[data-testid="stColumn"],.st-key-product-design-workspace>[data-testid="stLayoutWrapper"]>[data-testid="stHorizontalBlock"]>[data-testid="stColumn"]{flex:1 1 100%!important;min-width:100%!important}
+ .st-key-product-design-controls>[data-testid="stHorizontalBlock"],.st-key-product-design-controls>[data-testid="stLayoutWrapper"]>[data-testid="stHorizontalBlock"]{flex-wrap:wrap}
+ .st-key-product-design-controls>[data-testid="stHorizontalBlock"]>[data-testid="stColumn"],.st-key-product-design-controls>[data-testid="stLayoutWrapper"]>[data-testid="stHorizontalBlock"]>[data-testid="stColumn"]{flex:1 1 170px!important;min-width:170px!important}
+}
+@media(max-width:1099px){
+ .st-key-product-design-header>[data-testid="stHorizontalBlock"],.st-key-product-design-header>[data-testid="stLayoutWrapper"]>[data-testid="stHorizontalBlock"]{flex-wrap:wrap;gap:12px}
+ .st-key-product-design-header>[data-testid="stHorizontalBlock"]>[data-testid="stColumn"],.st-key-product-design-header>[data-testid="stLayoutWrapper"]>[data-testid="stHorizontalBlock"]>[data-testid="stColumn"]{flex:1 1 100%!important;min-width:100%!important}
+}
+@media(max-width:640px){
+ .st-key-product-design-page h1,.st-key-product-design-page .pd-title{font-size:22px!important}
+ .st-key-product-design-catalog,.st-key-product-design-details{padding:12px;gap:12px}
+ .st-key-product-design-filters{padding:10px}
+ .st-key-product-design-filters>[data-testid="stHorizontalBlock"]>[data-testid="stColumn"],.st-key-product-design-filters>[data-testid="stLayoutWrapper"]>[data-testid="stHorizontalBlock"]>[data-testid="stColumn"]{flex:1 1 calc(50% - 10px)!important;min-width:calc(50% - 10px)!important}
+ .st-key-product-design-controls>[data-testid="stHorizontalBlock"]>[data-testid="stColumn"],.st-key-product-design-controls>[data-testid="stLayoutWrapper"]>[data-testid="stHorizontalBlock"]>[data-testid="stColumn"]{flex:1 1 calc(50% - 12px)!important;min-width:calc(50% - 12px)!important}
+ .st-key-product-design-controls>[data-testid="stHorizontalBlock"]>[data-testid="stColumn"]:first-child,.st-key-product-design-controls>[data-testid="stLayoutWrapper"]>[data-testid="stHorizontalBlock"]>[data-testid="stColumn"]:first-child{flex:1 1 100%!important;min-width:100%!important}
+ .st-key-product-design-page [data-testid="stButton"] button,.st-key-product-design-page [data-testid="stDownloadButton"] button,.st-key-product-design-page [data-testid="stPopover"] button,.st-key-product-design-page [data-testid="stFormSubmitButton"] button,.st-key-product-design-period [data-testid="stButtonGroup"] button{min-height:44px}
+ .st-key-product-design-page [data-testid="stCheckbox"] label{min-height:44px}
+ .st-key-product-design-page [data-testid="stTextInputRootElement"],.st-key-product-design-page [data-baseweb="select"]>div{min-height:44px}
+ .st-key-product-design-metrics>[data-testid="stHorizontalBlock"],.st-key-product-design-metrics>[data-testid="stLayoutWrapper"]>[data-testid="stHorizontalBlock"]{gap:6px}
+ .st-key-product-design-metrics>[data-testid="stHorizontalBlock"]>[data-testid="stColumn"],.st-key-product-design-metrics>[data-testid="stLayoutWrapper"]>[data-testid="stHorizontalBlock"]>[data-testid="stColumn"]{width:calc((100% - 12px)/3)!important;max-width:calc((100% - 12px)/3)!important}
+ .st-key-product-design-metrics [data-testid="stMetric"]{padding:8px 7px}
+ .st-key-product-design-metrics [data-testid="stMetricValue"],.st-key-product-design-metrics [data-testid="stMetricValue"] [data-testid="stMarkdownContainer"] p{font-size:16px!important}
+ .st-key-product-design-metrics [data-testid="stMetricLabel"] p{font-size:10px!important;white-space:normal}
+ .st-key-product-design-page .pd-product-title{font-size:16px}
+}
 </style>'''

@@ -16,7 +16,7 @@ from sales_center.theme import CSS
 from sales_center.presentation import safe, pill, stat, client_row, purchase_chart, category_chart
 from sales_center.settings import connections, model_picker
 from sales_center.browser_store import render_and_restore, save_request, forget_request
-from sales_center.product_workspace import render as render_product_workspace
+from sales_center.product_design import render as render_product_workspace
 from sales_center.price_catalog import load_catalog
 from sales_center.client_blocks_ui import render as render_client_blocks
 from sales_center.activity_api import load_client_activity
@@ -196,9 +196,13 @@ def sync_panel():
             st.session_state.sync_disconnected=True
             st.rerun()
 with st.container(key='topbar'):
-    search_col,sync_col,status_col,user_col=st.columns([2.8,2,1.8,1.3],gap='small',vertical_alignment='center')
-    with search_col:
-        global_search=st.text_input('Поиск по клиентам, товарам, контактам',placeholder='⌕  Поиск по клиентам, товарам, контактам…',key='global_search')
+    if page=='Товарная аналитика':
+        sync_col,status_col,user_col=st.columns([2,2,1.3],gap='small',vertical_alignment='center')
+        global_search=st.session_state.get('global_search','')
+    else:
+        search_col,sync_col,status_col,user_col=st.columns([2.8,2,1.8,1.3],gap='small',vertical_alignment='center')
+        with search_col:
+            global_search=st.text_input('Поиск по клиентам, товарам, контактам',placeholder='⌕  Поиск по клиентам, товарам, контактам…',key='global_search')
     with sync_col: sync_panel()
     with status_col:
         if st.session_state.get('sync_success_at'):
@@ -207,9 +211,9 @@ with st.container(key='topbar'):
         else: st.markdown('<div class="top-status"><span class="status-dot off"></span>Источник не подключён</div>',unsafe_allow_html=True)
     with user_col:
         st.button('Настройки и подключения',key='open_settings',on_click=navigate,args=('Настройки',),width='stretch',help='Открыть настройки токена, мессенджеров и хранения данных')
-        st.caption(user_name if user_id!='personal' else 'Личный кабинет')
+        if page!='Товарная аналитика': st.caption(user_name if user_id!='personal' else 'Личный кабинет')
 with st.container(key='workspace-title' if page in ['Клиенты','Карточка клиента'] else 'page-title'):
-    st.title(page)
+    if page!='Товарная аналитика' or 'live_data' not in st.session_state: st.title(page)
 source='Мой Склад'
 if page=='Настройки':
     connections()
@@ -245,10 +249,10 @@ with st.sidebar:
         if not store.persistent: st.caption('SQLite: облако может удалить записи при перезапуске. Для постоянного хранения настройте PostgreSQL.')
         if lines.cost.isna().any(): st.caption('Себестоимость части позиций недоступна: прибыль таких периодов не рассчитывается.')
 with st.sidebar:
-    with st.expander('Период аналитики'):
+    with st.expander('Период графиков' if page=='Товарная аналитика' else 'Период аналитики'):
         start=st.date_input('Начало периода',TODAY-timedelta(days=90),key='period_start')
         end=st.date_input('Конец периода',TODAY,key='period_end')
-        st.caption('Период влияет на суммы и графики. Циклы рассчитаны по 12 месяцам.')
+        st.caption('Для вкладки «Продажи и категории». В «Товары и покупатели» период выбирается над таблицами.' if page=='Товарная аналитика' else 'Период влияет на суммы и графики. Циклы рассчитаны по 12 месяцам.')
 if start>end: st.error('Начало периода не может быть позже конца.'); st.stop()
 selected=period(lines,start,end)
 
@@ -527,7 +531,7 @@ elif page == 'Возврат клиентов':
     st.caption('Клиенты с недостаточной историей не классифицируются как потерянные. Задержка — сигнал для разговора, а не подтверждение потери клиента.')
     recommendation_cards(recommendations[recommendations.kind == 'return'])
 elif page == 'Товарная аналитика':
-    sales_tab,buyers_tab=st.tabs(['Продажи и категории','Товары и покупатели'])
+    buyers_tab,sales_tab=st.tabs(['Товары и покупатели','Продажи и категории'])
     with sales_tab:
         cats = st.multiselect('Категории',products.category.unique())
         frame = selected[selected.category.isin(cats)] if cats else selected
