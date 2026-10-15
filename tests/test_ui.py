@@ -65,6 +65,54 @@ class InterfaceTests(unittest.TestCase):
             next(r for r in at.radio if r.key=='page').set_value(page).run()
             self.assertFalse(at.exception,page)
             self.assertIn(at.session_state['page'],[t.value for t in at.title])
+
+    def dashboard_app(self):
+        at=self.app()
+        c,p,l=at.session_state['live_data']
+        c=c.copy();today=pd.Timestamp.now(tz='Europe/Moscow').tz_localize(None).normalize()
+        c['created_at']=[(today-pd.Timedelta(days=i if i<2 else 60)).isoformat() for i in range(len(c))]
+        c['code']=['опт','']+['розница']*(len(c)-2)
+        c['owner_employee']=['Анна','Борис']+['Не назначен']*(len(c)-2)
+        c['owner_employee_id']=''
+        c['crm_project']=['Рестораны','']+['Магазины']*(len(c)-2)
+        c['crm_archived']=False;c['crm_project_field_present']=True
+        c['dashboard_loaded']=True;c['dashboard_synced_at']=1234
+        at.session_state['live_data']=(c,p,l)
+        next(r for r in at.radio if r.key=='page').set_value('Dashboard').run()
+        self.assertFalse(at.exception)
+        return at
+
+    def test_dashboard_five_columns_sort_filters_and_empty_state_without_api(self):
+        with patch('sales_center.dashboard_api.load_counterparties') as crm,patch('sales_center.sync.load_live') as full:
+            at=self.dashboard_app()
+            c=at.session_state['live_data'][0]
+            self.assertEqual(list(at.dataframe[0].value.columns),['Контрагент','Дата добавления','Код','Владелец-сотрудник','Проект'])
+            self.assertEqual(at.dataframe[0].value['Контрагент'].tolist(),c.company.iloc[:2].tolist())
+            next(w for w in at.selectbox if w.key=='dashboard_sort').set_value('Сначала старые').run()
+            self.assertEqual(at.dataframe[0].value['Контрагент'].tolist(),c.company.iloc[:2].tolist()[::-1])
+            next(w for w in at.multiselect if w.key=='dashboard_codes').set_value(['Не указан']).run()
+            self.assertEqual(at.dataframe[0].value['Контрагент'].tolist(),[c.company.iloc[1]])
+            next(w for w in at.multiselect if w.key=='dashboard_owners').set_value(['Анна']).run()
+            self.assertTrue(any('не найдены' in i.value for i in at.info))
+            next(w for w in at.button if w.key=='dashboard_reset').click().run()
+            next(w for w in at.multiselect if w.key=='dashboard_projects').set_value(['Рестораны']).run()
+            self.assertEqual(at.dataframe[0].value['Контрагент'].tolist(),[c.company.iloc[0]])
+            self.assertFalse(at.exception)
+            crm.assert_not_called();full.assert_not_called()
+
+    def test_dashboard_legacy_snapshot_upgrades_once_without_full_reload(self):
+        at=self.dashboard_app();fresh=at.session_state['live_data'][0]
+        c,p,l=at.session_state['live_data']
+        old=c.drop(columns=['dashboard_loaded'])
+        at.session_state['live_data']=(old,p,l)
+        at.session_state['sync_token']='test-only'
+        at.session_state['sync_interval']=0
+        with patch('sales_center.dashboard_api.load_counterparties',return_value=fresh) as crm,patch('sales_center.sync.load_live') as full:
+            at.run();self.settle_refresh(at)
+            next(w for w in at.selectbox if w.key=='dashboard_sort').set_value('Сначала старые').run()
+            self.assertFalse(at.exception)
+            crm.assert_called_once();full.assert_not_called()
+            self.assertIn('dashboard_loaded',at.session_state['live_data'][0])
     def test_empty_source_no_demo_fallback(self):
         at=self.app(False)
         self.assertEqual(len(at.metric),0)

@@ -183,4 +183,18 @@ h1{font-size:25px!important;letter-spacing:-.025em}h2{font-size:20px!important}h
  .st-key-product-design-metrics [data-testid="stMetricLabel"] p{font-size:10px!important;white-space:normal}
  .st-key-product-design-page .pd-product-title{font-size:16px}
 }
+/* Dashboard: dense file-list rhythm, native inputs and grid hit targets. */
+.st-key-dashboard-inbox{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px}
+.st-key-dashboard-inbox [data-testid="stVerticalBlock"]{gap:8px}
+.st-key-dashboard-inbox [data-testid="stWidgetLabel"] p{font-size:11px;line-height:1.4}
+.st-key-dashboard-inbox [data-testid="stTextInput"] input,.st-key-dashboard-inbox [data-baseweb="select"]{font-size:12px}
+.st-key-dashboard-inbox [data-testid="stDataFrame"]{border-radius:7px;border:1px solid #e5eaf2;max-width:100%}
+.dashboard-register{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:9px 0 6px;border-top:1px solid #edf1f7;font-size:11px;color:#7281a3}
+.dashboard-register b{color:#344762;font-size:10px;letter-spacing:.08em}
+@media(max-width:640px){
+ .st-key-dashboard-inbox{padding:12px}
+ .st-key-dashboard-inbox [data-testid="stHorizontalBlock"]{flex-wrap:wrap;gap:8px}
+ .st-key-dashboard-inbox [data-testid="stColumn"]{flex:1 1 100%!important;min-width:100%!important}
+ .dashboard-register{align-items:flex-start;flex-direction:column;gap:3px}
+}
 </style>'''

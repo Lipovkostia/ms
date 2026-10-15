@@ -21,6 +21,7 @@ from sales_center.product_page import render as render_product_workspace
 from sales_center.price_catalog import load_catalog
 from sales_center.client_blocks_ui import render as render_client_blocks
 from sales_center.activity_api import load_client_activity
+from sales_center.dashboard_ui import render as render_dashboard
 
 st.set_page_config(page_title='AI Sales Center', page_icon='📈', layout='wide')
 st.markdown(CSS,unsafe_allow_html=True)
@@ -103,10 +104,10 @@ def navigate(page_name):
     if 'moysklad_panel' in st.session_state: st.session_state.moysklad_panel=False
 
 if 'page' not in st.session_state: st.session_state.page='Клиенты'
-PAGES=['Главная','Клиенты','Карточка клиента','Возврат клиентов','Товарная аналитика','AI-рекомендации','Задачи','Эффективность','Сообщения','Настройки']
+PAGES=['Dashboard','Главная','Клиенты','Карточка клиента','Возврат клиентов','Товарная аналитика','AI-рекомендации','Задачи','Эффективность','Сообщения','Настройки']
 with st.sidebar:
     st.markdown('<div class="brand"><div class="brand-mark"></div><div><div class="brand-title">AI-Помощник</div><div class="brand-sub">для оптовых продаж</div></div></div>',unsafe_allow_html=True)
-    nav_icons=['⌂','♧','▣','↻','▥','✦','☑','↗','▤','⚙']
+    nav_icons=['▦','⌂','♧','▣','↻','▥','✦','☑','↗','▤','⚙']
     page=st.radio('Раздел',PAGES,key='page',format_func=lambda name:nav_icons[PAGES.index(name)]+'  '+name)
     st.divider()
     st.markdown('<div class="nav-foot"><b>✦ Аналитика продаж</b><br>История покупок помогает выбрать следующий контакт.</div>',unsafe_allow_html=True)
@@ -259,12 +260,14 @@ with st.sidebar:
         st.caption(f'Исключено внутренних отгрузок: {lines.attrs.get("excluded_internal_shipments",0)} · пустых документов: {lines.attrs.get("excluded_empty_shipments",0)}')
         if not store.persistent: st.caption('SQLite: облако может удалить записи при перезапуске. Для постоянного хранения настройте PostgreSQL.')
         if lines.cost.isna().any(): st.caption('Себестоимость части позиций недоступна: прибыль таких периодов не рассчитывается.')
-with st.sidebar:
-    with st.expander('Период графиков' if page=='Товарная аналитика' else 'Период аналитики'):
-        start=st.date_input('Начало периода',TODAY-timedelta(days=90),key='period_start')
-        end=st.date_input('Конец периода',TODAY,key='period_end')
-        st.caption('Для вкладки «Продажи и категории». В «Товары и покупатели» период выбирается над таблицами.' if page=='Товарная аналитика' else 'Период влияет на суммы и графики. Циклы рассчитаны по 12 месяцам.')
-if start>end: st.error('Начало периода не может быть позже конца.'); st.stop()
+start,end=TODAY-timedelta(days=90),TODAY
+if page!='Dashboard':
+    with st.sidebar:
+        with st.expander('Период графиков' if page=='Товарная аналитика' else 'Период аналитики'):
+            start=st.date_input('Начало периода',start,key='period_start')
+            end=st.date_input('Конец периода',end,key='period_end')
+            st.caption('Для вкладки «Продажи и категории». В «Товары и покупатели» период выбирается над таблицами.' if page=='Товарная аналитика' else 'Период влияет на суммы и графики. Циклы рассчитаны по 12 месяцам.')
+    if start>end: st.error('Начало периода не может быть позже конца.'); st.stop()
 selected=period(lines,start,end)
 
 def save_record(kind,key,value):
@@ -349,7 +352,21 @@ def recommendation_cards(frame, limit=15):
                 except StoreError: st.error('Не удалось сохранить обработку рекомендации.')
 
 
-if page == 'Главная':
+if page == 'Dashboard':
+    def refresh_dashboard():
+        token=st.session_state.get('sync_token') or config.token
+        if not token:
+            st.session_state.live_error='Сначала восстановите подключение к Моему Складу.'
+            return
+        start_refresh(st.session_state,TODAY,token,user_id,cache_for(token),kind='counterparties')
+    token=st.session_state.get('sync_token')
+    bootstrap_key='dashboard_bootstrap:'+source_id(token) if token else None
+    if token and 'dashboard_loaded' not in clients and bootstrap_key not in st.session_state and not refresh_pending(st.session_state):
+        st.session_state[bootstrap_key]=True
+        refresh_dashboard()
+        st.rerun()
+    render_dashboard(clients,TODAY,open_client,refresh_dashboard,refresh_pending(st.session_state),bool(token),global_search)
+elif page == 'Главная':
     kpis(selected)
     left,right = st.columns([1.5,1])
     with left:

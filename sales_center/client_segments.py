@@ -35,7 +35,9 @@ def enrich(clients, counterparties, employees, shipments, new_orders, today):
     result['owner_employee']=[people.get(external_id(cp[by_id[row]].get('owner') or {}),'Не назначен') for row in result.client_id]
     result['recent_order_dates']=[recent.get(by_id[row],[]) for row in result.client_id]
     result['crm_history_loaded']=True
-    return result
+    from .dashboard_data import attach
+    import time
+    return attach(result,counterparties,employees,time.time())
 
 
 def activity(clients,today):

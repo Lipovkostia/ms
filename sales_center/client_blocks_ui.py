@@ -8,7 +8,7 @@ from .presentation import money as rub
 def render(clients,today,store,open_client,refresh_data):
     st.subheader('Клиенты по последней покупке')
     if st.session_state.get('live_error'): st.error(st.session_state.live_error)
-    if 'crm_history_loaded' not in clients:
+    if 'crm_history_loaded' not in clients or not clients.crm_history_loaded.fillna(False).all():
         st.info('Для блоков, владельцев и новых заказов нужно один раз обновить данные из Моего Склада.')
         st.button('Загрузить данные для блоков',on_click=refresh_data,key='crm_initial_refresh')
         return

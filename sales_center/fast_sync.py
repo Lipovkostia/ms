@@ -47,6 +47,9 @@ def _read(today,token,cache,progress,kind,base_frames,base_saved_at):
             from .price_catalog import load_catalog
             progress.report('Обновление товаров и цен')
             frames=(base_frames[0],load_catalog(token),base_frames[2])
+        elif kind=='counterparties':
+            from .dashboard_api import load_counterparties
+            frames=(load_counterparties(token,base_frames[0],progress.report),base_frames[1],base_frames[2])
         else:
             frames=sync.load_live(today,token=token,progress=progress.report)
         if not frames[0].attrs.get('account_id'):
@@ -54,7 +57,7 @@ def _read(today,token,cache,progress,kind,base_frames,base_saved_at):
         progress.report('Подготовка аналитики')
         summary=client_summary(frames[0],frames[2],today)
         analytics=(summary,generate(summary,frames[2],frames[1],today))
-        saved_at=base_saved_at if kind=='catalog' else time.time()
+        saved_at=base_saved_at if kind in {'catalog','counterparties'} else time.time()
         warning=None
         if cache is not None:
             try: cache.save(frames,saved_at)
@@ -67,8 +70,8 @@ def _read(today,token,cache,progress,kind,base_frames,base_saved_at):
 
 def start(state,today,token,owner,cache=None,origin=None,remember=None,kind='full'):
     """Start once for this session/source, without waiting on API or CPU work."""
-    if kind not in {'full','catalog'}: raise ValueError('Неподдерживаемый вид обновления.')
-    if kind=='catalog' and 'live_data' not in state: raise MoySkladError('Сначала подключите Мой Склад.')
+    if kind not in {'full','catalog','counterparties'}: raise ValueError('Неподдерживаемый вид обновления.')
+    if kind!='full' and 'live_data' not in state: raise MoySkladError('Сначала подключите Мой Склад.')
     token=token.strip()
     if not token: raise MoySkladError('Для обновления сначала подключите Мой Склад.')
     digest=source_id(token)
@@ -115,6 +118,7 @@ def finish(state,owner):
     if warning: state['sync_cache_error']=warning
     else: state.pop('sync_cache_error',None)
     if job.kind=='catalog': state['sync_catalog_at']=time.time()
+    if job.kind=='counterparties': state['sync_counterparties_at']=time.time()
     if job.remember: state['device_save_after_refresh']=True
     elif job.origin!='device': state['sync_device_saved']=False
     return True
