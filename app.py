@@ -203,9 +203,9 @@ def sync_panel():
             st.session_state.sync_disconnected=True
             st.rerun()
 with st.container(key='topbar'):
-    if page=='Товарная аналитика':
+    if page in ['Товарная аналитика','Dashboard']:
         sync_col,status_col,user_col=st.columns([2,2,1.3],gap='small',vertical_alignment='center')
-        global_search=st.session_state.get('global_search','')
+        global_search=st.session_state.get('global_search','') if page!='Dashboard' else ''
     else:
         search_col,sync_col,status_col,user_col=st.columns([2.8,2,1.8,1.3],gap='small',vertical_alignment='center')
         with search_col:
@@ -218,7 +218,7 @@ with st.container(key='topbar'):
         else: st.markdown('<div class="top-status"><span class="status-dot off"></span>Источник не подключён</div>',unsafe_allow_html=True)
     with user_col:
         st.button('Настройки и подключения',key='open_settings',on_click=navigate,args=('Настройки',),width='stretch',help='Открыть настройки токена, мессенджеров и хранения данных')
-        if page!='Товарная аналитика': st.caption(user_name if user_id!='personal' else 'Личный кабинет')
+        if page not in ['Товарная аналитика','Dashboard']: st.caption(user_name if user_id!='personal' else 'Личный кабинет')
 with st.container(key='workspace-title' if page in ['Клиенты','Карточка клиента'] else 'page-title'):
     if page!='Товарная аналитика' or 'live_data' not in st.session_state: st.title(page)
 source='Мой Склад'
@@ -360,12 +360,12 @@ if page == 'Dashboard':
             return
         start_refresh(st.session_state,TODAY,token,user_id,cache_for(token),kind='counterparties')
     token=st.session_state.get('sync_token')
-    bootstrap_key='dashboard_bootstrap:'+source_id(token) if token else None
-    if token and 'dashboard_loaded' not in clients and bootstrap_key not in st.session_state and not refresh_pending(st.session_state):
+    bootstrap_key='dashboard_work_bootstrap:'+source_id(token) if token else None
+    if token and ('dashboard_loaded' not in clients or 'crm_orders_loaded' not in clients) and bootstrap_key not in st.session_state and not refresh_pending(st.session_state):
         st.session_state[bootstrap_key]=True
         refresh_dashboard()
         st.rerun()
-    render_dashboard(clients,TODAY,open_client,refresh_dashboard,refresh_pending(st.session_state),bool(token),global_search)
+    render_dashboard(clients,TODAY,open_client,refresh_dashboard,refresh_pending(st.session_state),bool(token),global_search,store=store)
 elif page == 'Главная':
     kpis(selected)
     left,right = st.columns([1.5,1])

@@ -49,7 +49,7 @@ def _read(today,token,cache,progress,kind,base_frames,base_saved_at):
             frames=(base_frames[0],load_catalog(token),base_frames[2])
         elif kind=='counterparties':
             from .dashboard_api import load_counterparties
-            frames=(load_counterparties(token,base_frames[0],progress.report),base_frames[1],base_frames[2])
+            frames=(load_counterparties(token,base_frames[0],progress.report,include_activity=True,today=today),base_frames[1],base_frames[2])
         else:
             frames=sync.load_live(today,token=token,progress=progress.report)
         if not frames[0].attrs.get('account_id'):

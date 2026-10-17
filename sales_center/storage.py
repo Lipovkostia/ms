@@ -70,10 +70,11 @@ class Store:
         with self.connect() as db:
             r=self.execute(db,'SELECT * FROM tasks WHERE scope=? ORDER BY due,id',(self.scope,))
             return pd.DataFrame(r.fetchall(),columns=self.columns(r))
-    def add(self,client_id,title,due,note='',recommendation_id=None):
+    def add(self,client_id,title,due,note='',recommendation_id=None,status='Запланирована'):
         if not title.strip(): raise ValueError('Укажите название задачи.')
+        if status not in ['Запланирована','В работе']: raise ValueError('Неизвестный статус новой задачи.')
         with self.connect() as db:
-            self.execute(db,'INSERT INTO tasks(client_id,title,due,note,recommendation_id,scope) VALUES(?,?,?,?,?,?)',(int(client_id),title.strip(),str(due),note,recommendation_id,self.scope))
+            self.execute(db,'INSERT INTO tasks(client_id,title,due,note,recommendation_id,scope,status) VALUES(?,?,?,?,?,?,?)',(int(client_id),title.strip(),str(due),note,recommendation_id,self.scope,status))
     def update(self,task_id,status,note):
         if status not in ['Запланирована','В работе','Выполнена','Отменена']: raise ValueError('Неизвестный статус.')
         with self.connect() as db:

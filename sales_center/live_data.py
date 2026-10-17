@@ -156,14 +156,16 @@ def load_live(today, token=None, progress=None):
             cur=currency_by_id.get(external_id(doc.get('rate',{}).get('currency',{})),{})
             if str(cur.get('isoCode')).upper() not in {'643','RUB'}:
                 raise MoySkladError('История содержит другую или неизвестную валюту. Суммы не смешиваются.')
-        recent_orders=collect('customerorder','Загрузка новых заказов покупателей',{'filter':f'created>={(pd.Timestamp(today)-pd.Timedelta(days=10)):%Y-%m-%d} 00:00:00'})
+        recent_orders=collect('customerorder','Загрузка итогов заказов покупателей')
         # Resolve archived counterparties referenced by the full history as well.
         known={external_id(c) for c in cp}
-        if any(external_id(d.get('agent') or {}) not in known and d.get('agent',{}).get('meta',{}).get('type')!='organization' for d in history):
+        if any(external_id(d.get('agent') or {}) not in known and d.get('agent',{}).get('meta',{}).get('type')!='organization' for d in history+recent_orders):
             archived=collect('counterparty','Загрузка архивных контрагентов истории',{'filter':'archived=true'})
             cp=list({external_id(c):c for c in cp+archived}.values())
             frames=normalize(cp,products,docs,currencies,positions)
-        return enrich(frames[0],cp,employees,history,recent_orders,today),frames[1],frames[2]
+        from .dashboard_workspace import attach_orders
+        enriched=enrich(frames[0],cp,employees,history,recent_orders,today)
+        return attach_orders(enriched,recent_orders,today),frames[1],frames[2]
     except (KeyError,TypeError,ValueError,OverflowError) as exc:
         field=f' Поле: {exc.args[0]}.' if isinstance(exc,KeyError) else ''
         raise MoySkladError(f'Неверный формат коллекции API ({type(exc).__name__}).{field} Частичная загрузка отменена; прежние данные сохранены.') from None

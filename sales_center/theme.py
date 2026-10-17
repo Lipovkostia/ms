@@ -183,18 +183,32 @@ h1{font-size:25px!important;letter-spacing:-.025em}h2{font-size:20px!important}h
  .st-key-product-design-metrics [data-testid="stMetricLabel"] p{font-size:10px!important;white-space:normal}
  .st-key-product-design-page .pd-product-title{font-size:16px}
 }
-/* Dashboard: dense file-list rhythm, native inputs and grid hit targets. */
-.st-key-dashboard-inbox{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px}
-.st-key-dashboard-inbox [data-testid="stVerticalBlock"]{gap:8px}
-.st-key-dashboard-inbox [data-testid="stWidgetLabel"] p{font-size:11px;line-height:1.4}
-.st-key-dashboard-inbox [data-testid="stTextInput"] input,.st-key-dashboard-inbox [data-baseweb="select"]{font-size:12px}
-.st-key-dashboard-inbox [data-testid="stDataFrame"]{border-radius:7px;border:1px solid #e5eaf2;max-width:100%}
-.dashboard-register{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:9px 0 6px;border-top:1px solid #edf1f7;font-size:11px;color:#7281a3}
-.dashboard-register b{color:#344762;font-size:10px;letter-spacing:.08em}
+/* Compact manager workspace: controls stay above the client register. */
+[data-testid="stMain"]:has(.st-key-dashboard-workspace) .block-container{padding-top:3.1rem}
+[data-testid="stMain"]:has(.st-key-dashboard-workspace) .st-key-topbar{padding:0 0 4px;margin:0}
+[data-testid="stMain"]:has(.st-key-dashboard-workspace) .st-key-page-title h1{font-size:22px!important;padding:4px 0 0;margin:0}
+[data-testid="stMain"]:has(.st-key-dashboard-workspace) .st-key-page-title{margin:0}
+.st-key-dashboard-workspace [data-testid="stVerticalBlock"]{gap:6px}
+.st-key-dashboard-toolbar{background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.st-key-dashboard-workspace [data-testid="stWidgetLabel"] p{font-size:11px;line-height:1.3}
+.st-key-dashboard-workspace [data-testid="stTextInput"] input,.st-key-dashboard-workspace [data-baseweb="select"]{font-size:12px}
+.st-key-dashboard-workspace [data-testid="stDataFrame"]{border-radius:7px;border:1px solid #dce4ef;max-width:100%}
+.st-key-dashboard-views [data-testid="stButtonGroup"] button{font-size:11px;min-height:33px;padding:5px 9px}
+.dashboard-register{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:5px 0;font-size:10px;color:#7281a3}
+.dashboard-register b{color:#344762;font-size:10px;letter-spacing:.06em}
+.st-key-dashboard-detail{padding:12px;background:#fff;border-radius:10px}
+.st-key-dashboard-detail [data-testid="stAlert"]{padding:9px;font-size:12px}
+.st-key-dashboard-detail [data-testid="stForm"]{padding:10px}
+.st-key-dashboard-detail h3{font-size:16px!important;overflow-wrap:anywhere}
+@media(max-width:900px){
+ .st-key-dashboard-workspace>[data-testid="stLayoutWrapper"]>[data-testid="stHorizontalBlock"]{flex-wrap:wrap}
+ .st-key-dashboard-workspace>[data-testid="stLayoutWrapper"]>[data-testid="stHorizontalBlock"]>[data-testid="stColumn"]{flex:1 1 100%!important;min-width:100%!important}
+}
 @media(max-width:640px){
- .st-key-dashboard-inbox{padding:12px}
- .st-key-dashboard-inbox [data-testid="stHorizontalBlock"]{flex-wrap:wrap;gap:8px}
- .st-key-dashboard-inbox [data-testid="stColumn"]{flex:1 1 100%!important;min-width:100%!important}
+ .st-key-dashboard-toolbar [data-testid="stHorizontalBlock"]{flex-wrap:wrap;gap:6px}
+ .st-key-dashboard-toolbar [data-testid="stColumn"]{flex:1 1 calc(50% - 6px)!important;min-width:calc(50% - 6px)!important}
+ .st-key-dashboard-toolbar [data-testid="stColumn"]:first-child{flex:1 1 100%!important;min-width:100%!important}
+ .st-key-dashboard-workspace [data-testid="stButton"] button,.st-key-dashboard-workspace [data-testid="stPopover"] button{min-height:40px}
  .dashboard-register{align-items:flex-start;flex-direction:column;gap:3px}
 }
 </style>'''

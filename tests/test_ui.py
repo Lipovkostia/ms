@@ -77,28 +77,50 @@ class InterfaceTests(unittest.TestCase):
         c['crm_project']=['Рестораны','']+['Магазины']*(len(c)-2)
         c['crm_archived']=False;c['crm_project_field_present']=True
         c['dashboard_loaded']=True;c['dashboard_synced_at']=1234
+        c['crm_orders_loaded']=True;c['crm_order_count']=0;c['crm_history_loaded']=True
+        c['purchase_history']=[[] for _ in range(len(c))]
+        at.session_state['dashboard_view']='new'
         at.session_state['live_data']=(c,p,l)
         next(r for r in at.radio if r.key=='page').set_value('Dashboard').run()
         self.assertFalse(at.exception)
         return at
 
-    def test_dashboard_five_columns_sort_filters_and_empty_state_without_api(self):
+    def test_dashboard_manager_columns_sort_filters_and_empty_state_without_api(self):
         with patch('sales_center.dashboard_api.load_counterparties') as crm,patch('sales_center.sync.load_live') as full:
             at=self.dashboard_app()
             c=at.session_state['live_data'][0]
-            self.assertEqual(list(at.dataframe[0].value.columns),['Контрагент','Дата добавления','Код','Владелец-сотрудник','Проект'])
-            self.assertEqual(at.dataframe[0].value['Контрагент'].tolist(),c.company.iloc[:2].tolist())
+            self.assertTrue({'Клиент','Добавлен','Код','Менеджер','Проект','Заказы','Покупки','Покупки, ₽','Мой контакт','Внимание'}.issubset(at.dataframe[0].value.columns))
+            self.assertEqual(at.dataframe[0].value['Клиент'].tolist(),c.company.iloc[:2].tolist())
             next(w for w in at.selectbox if w.key=='dashboard_sort').set_value('Сначала старые').run()
-            self.assertEqual(at.dataframe[0].value['Контрагент'].tolist(),c.company.iloc[:2].tolist()[::-1])
+            self.assertEqual(at.dataframe[0].value['Клиент'].tolist(),c.company.iloc[:2].tolist()[::-1])
             next(w for w in at.multiselect if w.key=='dashboard_codes').set_value(['Не указан']).run()
-            self.assertEqual(at.dataframe[0].value['Контрагент'].tolist(),[c.company.iloc[1]])
+            self.assertEqual(at.dataframe[0].value['Клиент'].tolist(),[c.company.iloc[1]])
             next(w for w in at.multiselect if w.key=='dashboard_owners').set_value(['Анна']).run()
             self.assertTrue(any('не найдены' in i.value for i in at.info))
             next(w for w in at.button if w.key=='dashboard_reset').click().run()
             next(w for w in at.multiselect if w.key=='dashboard_projects').set_value(['Рестораны']).run()
-            self.assertEqual(at.dataframe[0].value['Контрагент'].tolist(),[c.company.iloc[0]])
+            self.assertEqual(at.dataframe[0].value['Клиент'].tolist(),[c.company.iloc[0]])
             self.assertFalse(at.exception)
             crm.assert_not_called();full.assert_not_called()
+
+    def test_dashboard_take_into_work_saves_scoped_task_and_keeps_card_access(self):
+        at=self.dashboard_app();cid=int(at.session_state['live_data'][0].client_id.iloc[0])
+        next(w for w in at.multiselect if w.key=='dashboard_owners').set_value(['Анна']).run()
+        at.session_state['dashboard_selected_id']=cid
+        at.run();self.assertFalse(at.exception)
+        next(b for b in at.button if b.label=='Взять в работу').click().run()
+        self.assertFalse(at.exception)
+        tasks=self.store.tasks()
+        self.assertEqual(len(tasks),1);self.assertEqual(int(tasks.iloc[0].client_id),cid)
+        self.assertEqual(tasks.iloc[0].status,'В работе')
+        self.assertFalse(any(b.label=='Взять в работу' for b in at.button))
+        next(b for b in at.button if b.key=='dashboard_open_client').click().run()
+        self.assertEqual(at.session_state['page'],'Карточка клиента')
+        self.assertEqual(at.session_state['workspace_client'],cid)
+        next(r for r in at.radio if r.key=='page').set_value('Dashboard').run()
+        self.assertFalse(at.exception)
+        self.assertEqual(next(w for w in at.multiselect if w.key=='dashboard_owners').value,['Анна'])
+        self.assertEqual(at.session_state['dashboard_view'],'new')
 
     def test_dashboard_legacy_snapshot_upgrades_once_without_full_reload(self):
         at=self.dashboard_app();fresh=at.session_state['live_data'][0]

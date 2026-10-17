@@ -57,8 +57,12 @@ def metadata(counterparties,employees=(),synced_at=None):
 def attach(clients,counterparties,employees=(),synced_at=None):
     extra=metadata(counterparties,employees,synced_at).set_index('client_id')
     result=clients.copy()
+    present=result.client_id.isin(extra.index)
     for field in FIELDS:
-        result[field]=result.client_id.map(extra[field])
+        values=result.client_id.map(extra[field])
+        # Keep historical-only rows intact when a CRM refresh no longer returns
+        # their counterparty. merge_counterparties already hides them in Dashboard.
+        result[field]=values.where(present,result[field]) if field in result else values
     return result
 
 
